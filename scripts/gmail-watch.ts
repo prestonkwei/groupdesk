@@ -1,5 +1,5 @@
 /* Start or renew the Gmail watch from the command line (build step 3). */
-import "dotenv/config";
+import "./load-env";
 import { startWatch } from "../src/lib/gmail/sync";
 
 startWatch()

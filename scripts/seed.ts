@@ -1,5 +1,5 @@
 /* Seed the first admin plus a couple of starter teams and tags. */
-import "dotenv/config";
+import "./load-env";
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
@@ -14,15 +14,18 @@ const ADMIN_NAME = process.env.SEED_ADMIN_NAME ?? "Admin";
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set");
-  if (!ADMIN_EMAIL) throw new Error("Set SEED_ADMIN_EMAIL to your school address");
 
   const pool = new Pool({ connectionString: url });
   const db = drizzle(pool, { casing: "snake_case" });
 
-  await db
-    .insert(agents)
-    .values({ email: ADMIN_EMAIL.toLowerCase(), name: ADMIN_NAME, role: "admin" })
-    .onConflictDoNothing();
+  // Teams and tags are safe to seed unconditionally; the admin needs a real
+  // address, because it has to match what Cloudflare Access hands over.
+  if (ADMIN_EMAIL) {
+    await db
+      .insert(agents)
+      .values({ email: ADMIN_EMAIL.toLowerCase(), name: ADMIN_NAME, role: "admin" })
+      .onConflictDoNothing();
+  }
 
   for (const name of ["Help Desk", "Infrastructure"]) {
     await db.insert(teams).values({ name, slug: slugify(name) }).onConflictDoNothing();
@@ -41,7 +44,12 @@ async function main() {
   }
 
   await pool.end();
-  console.log(`seeded; ${ADMIN_EMAIL} is an admin`);
+
+  console.log(
+    ADMIN_EMAIL
+      ? `seeded; ${ADMIN_EMAIL} is an admin`
+      : "seeded teams and tags; set SEED_ADMIN_EMAIL to your school address and re-run to create the admin",
+  );
 }
 
 main().catch((e) => {

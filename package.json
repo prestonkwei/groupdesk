@@ -15,7 +15,8 @@
     "gmail:watch": "tsx --require ./scripts/shims.cjs scripts/gmail-watch.ts",
     "gmail:sync": "tsx --require ./scripts/shims.cjs scripts/gmail-sync.ts",
     "test": "pnpm typecheck && pnpm lint && pnpm test:ingest",
-    "test:ingest": "tsx --require ./scripts/shims.cjs scripts/ingest-test.ts"
+    "test:ingest": "tsx --require ./scripts/shims.cjs scripts/ingest-test.ts",
+    "db:verify": "tsx scripts/db-verify.ts"
   },
   "packageManager": "pnpm@11.24.0",
   "dependencies": {

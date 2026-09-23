@@ -1,5 +1,5 @@
 /* Apply pending SQL migrations against DATABASE_URL. */
-import "dotenv/config";
+import "./load-env";
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import { migrate } from "drizzle-orm/neon-serverless/migrator";

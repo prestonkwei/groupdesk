@@ -66,9 +66,13 @@ Fill in at minimum:
 
 ```bash
 pnpm db:migrate      # creates the schema and the ticket-number sequence
-pnpm db:seed         # makes you an admin, adds starter teams and tags
+pnpm db:seed         # adds starter teams and tags; creates the admin if
+                     # SEED_ADMIN_EMAIL is set
+pnpm db:verify       # prints the tables, enums, constraints and row counts
 pnpm dev
 ```
+
+`db:seed` is safe to re-run — every insert is `on conflict do nothing`.
 
 Then visit `/admin/gmail` and press **Connect Gmail**. The local OAuth client
 already allows `http://localhost:3000/api/admin/gmail/callback`.
@@ -171,6 +175,7 @@ pnpm dev            # local dev
 pnpm test           # typecheck + lint + offline ingest checks
 pnpm db:generate    # new migration after editing src/db/schema.ts
 pnpm db:migrate
+pnpm db:verify      # read-only: what actually exists in the database
 pnpm gmail:sync     # run the ingest pipeline by hand
 pnpm gmail:watch    # start or renew the Gmail watch
 ```
