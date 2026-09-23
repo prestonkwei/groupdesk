@@ -1,0 +1,5 @@
+allowBuilds:
+  esbuild: true
+  core-js-pure: false
+  sharp: false
+  unrs-resolver: false

@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.21 0.02 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.02 264);
+  --muted: oklch(0.97 0.003 264);
+  --muted-foreground: oklch(0.55 0.015 264);
+  --border: oklch(0.92 0.005 264);
+  --input: oklch(0.92 0.005 264);
+  --ring: oklch(0.6 0.13 258);
+  --primary: oklch(0.42 0.12 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.96 0.01 258);
+  --accent-foreground: oklch(0.25 0.03 264);
+  --destructive: oklch(0.58 0.2 27);
+  --destructive-foreground: oklch(0.99 0 0);
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.17 0.012 264);
+  --foreground: oklch(0.96 0.003 264);
+  --card: oklch(0.21 0.014 264);
+  --card-foreground: oklch(0.96 0.003 264);
+  --muted: oklch(0.25 0.014 264);
+  --muted-foreground: oklch(0.68 0.015 264);
+  --border: oklch(0.3 0.015 264);
+  --input: oklch(0.3 0.015 264);
+  --ring: oklch(0.6 0.13 258);
+  --primary: oklch(0.72 0.12 254);
+  --primary-foreground: oklch(0.18 0.02 264);
+  --accent: oklch(0.28 0.02 264);
+  --accent-foreground: oklch(0.96 0.003 264);
+  --destructive: oklch(0.65 0.19 25);
+  --destructive-foreground: oklch(0.15 0.01 264);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Status colours, used by the badge component and the list rails. */
+@layer components {
+  .status-open { --status: oklch(0.62 0.17 28); }
+  .status-pending { --status: oklch(0.72 0.15 75); }
+  .status-solved { --status: oklch(0.6 0.13 155); }
+  .status-closed { --status: oklch(0.6 0.01 264); }
+}

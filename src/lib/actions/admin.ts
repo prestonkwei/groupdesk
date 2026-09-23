@@ -1,0 +1,175 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
+import { requireAdmin } from "@/lib/auth";
+import { slugify } from "@/lib/utils";
+import { startWatch } from "@/lib/gmail/sync";
+import type { ActionState } from "./tickets";
+
+export type { ActionState };
+
+/* ---------------------------------------------------------------- agents */
+
+export async function upsertAgent(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const id = String(form.get("id") ?? "");
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const name = String(form.get("name") ?? "").trim();
+  const role = String(form.get("role") ?? "agent") as "agent" | "admin";
+
+  if (!email.includes("@")) return { error: "A valid email is required" };
+  if (!name) return { error: "A name is required" };
+
+  if (id) {
+    await db.update(agents).set({ email, name, role }).where(eq(agents.id, id));
+  } else {
+    await db
+      .insert(agents)
+      .values({ email, name, role })
+      .onConflictDoNothing();
+  }
+
+  revalidatePath("/admin/agents");
+  return { ok: id ? "Agent updated" : `Added ${name}` };
+}
+
+export async function setAgentActive(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const id = String(form.get("id"));
+  const active = String(form.get("active")) === "true";
+  await db.update(agents).set({ active }).where(eq(agents.id, id));
+  revalidatePath("/admin/agents");
+  return {
+    ok: active
+      ? "Reactivated"
+      : "Deactivated — remember to remove them from the Cloudflare Access policy too",
+  };
+}
+
+export async function setAgentTeam(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const agentId = String(form.get("agentId"));
+  const teamId = String(form.get("teamId"));
+  const on = String(form.get("on")) === "true";
+
+  if (on) {
+    await db.insert(agentTeams).values({ agentId, teamId }).onConflictDoNothing();
+  } else {
+    await db
+      .delete(agentTeams)
+      .where(and(eq(agentTeams.agentId, agentId), eq(agentTeams.teamId, teamId)));
+  }
+
+  revalidatePath("/admin/agents");
+  return { ok: "Teams updated" };
+}
+
+/* ----------------------------------------------------------------- teams */
+
+export async function createTeam(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const name = String(form.get("name") ?? "").trim();
+  if (!name) return { error: "A name is required" };
+  await db
+    .insert(teams)
+    .values({ name, slug: slugify(name) })
+    .onConflictDoNothing();
+  revalidatePath("/admin/teams");
+  return { ok: `Created ${name}` };
+}
+
+export async function deleteTeam(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  await db.delete(teams).where(eq(teams.id, String(form.get("id"))));
+  revalidatePath("/admin/teams");
+  return { ok: "Team deleted" };
+}
+
+/* ------------------------------------------------------------------ tags */
+
+const TAG_COLORS = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
+
+export async function createTag(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const name = String(form.get("name") ?? "").trim();
+  const color = String(form.get("color") ?? "slate");
+  if (!name) return { error: "A name is required" };
+  if (!TAG_COLORS.includes(color as (typeof TAG_COLORS)[number])) {
+    return { error: "Unknown colour" };
+  }
+  await db
+    .insert(tags)
+    .values({ name, slug: slugify(name), color })
+    .onConflictDoNothing();
+  revalidatePath("/admin/tags");
+  return { ok: `Created ${name}` };
+}
+
+export async function deleteTag(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  await db.delete(tags).where(eq(tags.id, String(form.get("id"))));
+  revalidatePath("/admin/tags");
+  return { ok: "Tag deleted" };
+}
+
+/* ----------------------------------------------------------------- gmail */
+
+export async function renewWatch(): Promise<ActionState> {
+  await requireAdmin();
+  try {
+    const { expiration } = await startWatch();
+    revalidatePath("/admin/gmail");
+    return { ok: `Watch renewed, expires ${expiration.toLocaleString()}` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function runSyncNow(): Promise<ActionState> {
+  await requireAdmin();
+  const { syncFromHistory } = await import("@/lib/gmail/sync");
+  try {
+    const s = await syncFromHistory();
+    revalidatePath("/admin/gmail");
+    revalidatePath("/tickets");
+    return {
+      ok: `Scanned ${s.scanned}, ingested ${s.ingested}${s.fullResync ? " (full resync)" : ""}`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function disconnectGmail(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  await db.delete(gmailSync).where(eq(gmailSync.email, String(form.get("email"))));
+  revalidatePath("/admin/gmail");
+  return { ok: "Disconnected. Connect again to resume ingestion." };
+}
