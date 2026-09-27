@@ -14,6 +14,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "gmail:watch": "tsx --require ./scripts/shims.cjs scripts/gmail-watch.ts",
     "gmail:sync": "tsx --require ./scripts/shims.cjs scripts/gmail-sync.ts",
+    "gmail:backfill": "tsx --require ./scripts/shims.cjs scripts/gmail-backfill.ts",
     "test": "pnpm typecheck && pnpm lint && pnpm test:ingest",
     "test:ingest": "tsx --require ./scripts/shims.cjs scripts/ingest-test.ts",
     "db:verify": "tsx scripts/db-verify.ts"
