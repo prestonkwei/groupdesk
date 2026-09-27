@@ -14,6 +14,18 @@ export type BackfillBatch = {
   firstError: string | null;
 };
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Gmail's per-user "units per minute" quota, or a plain 429. */
+function isRateLimited(err: unknown): boolean {
+  const e = err as { code?: number; status?: number; message?: string };
+  const status = e?.code ?? e?.status;
+  return (
+    status === 429 ||
+    /quota exceeded|rate ?limit|user-rate/i.test(String(e?.message ?? err))
+  );
+}
+
 /** Gmail search for past group mail, e.g. `list:help.example.org after:2026/01/01`. */
 export function backfillQuery(base: string, after?: string, before?: string) {
   let q = base.trim();
@@ -67,18 +79,35 @@ export async function backfillBatch(
   let firstError: string | null = null;
   let processed = 0;
 
-  for (const id of pending) {
+  let backoff = 0;
+
+  outer: for (const id of pending) {
     if (Date.now() - started > budgetMs) break;
-    processed++;
-    try {
-      const result = await ingestGmailMessage(client, id);
-      if (result.status === "ingested") ingested++;
-      else skipped++;
-    } catch (err) {
-      failed++;
-      firstError ??= err instanceof Error ? err.message : String(err);
-      console.error(`backfill: ingest failed for gmail message ${id}`, err);
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const result = await ingestGmailMessage(client, id);
+        if (result.status === "ingested") ingested++;
+        else skipped++;
+        backoff = 0;
+        break;
+      } catch (err) {
+        // Past ~6 attempts (about 4 minutes of waiting) it's not a per-minute
+        // limit any more, e.g. the daily quota; count it as a failure.
+        if (isRateLimited(err) && attempt <= 6) {
+          // Wait out the per-minute quota and retry the same message. If the
+          // wait would overrun the budget, end the batch; the next call resumes.
+          backoff = Math.min(backoff ? backoff * 2 : 5_000, 60_000);
+          if (Date.now() - started + backoff > budgetMs) break outer;
+          await sleep(backoff);
+          continue;
+        }
+        failed++;
+        firstError ??= err instanceof Error ? err.message : String(err);
+        console.error(`backfill: ingest failed for gmail message ${id}`, err);
+        break;
+      }
     }
+    processed++;
   }
 
   return {
