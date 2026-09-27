@@ -1,20 +1,17 @@
 /*
- * Import past group mail that predates the watch. The regular sync only looks
- * back 7 days; this walks any Gmail search and feeds every match through the
- * same ingest pipeline, oldest first, so threads build in order and the
- * original sender becomes the requester.
+ * Import past group mail that predates the watch (the /admin/gmail Backfill
+ * button does the same from the browser). The regular sync only looks back
+ * 7 days; this feeds every match for a Gmail search through the ingest
+ * pipeline, oldest first.
  *
  *   pnpm gmail:backfill --after 2026-08-01
  *   pnpm gmail:backfill --query "list:help.example.org" --dry-run
  *
- * Safe to re-run: messages already ingested are skipped by gmail_message_id.
- * It does not touch gmail_sync's history cursor, so it can run alongside the
- * live watch.
+ * Safe to re-run: messages already ingested are skipped.
  */
 import "./load-env";
 import { env } from "../src/lib/env";
-import { gmailFor } from "../src/lib/gmail/client";
-import { ingestGmailMessage } from "../src/lib/gmail/ingest";
+import { backfillBatch, backfillQuery } from "../src/lib/gmail/backfill";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -23,56 +20,21 @@ function arg(name: string): string | undefined {
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const after = arg("after"); // YYYY-MM-DD
-  const before = arg("before"); // YYYY-MM-DD
-
-  let query = arg("query") ?? `label:"${env.labelName}"`;
-  if (after) query += ` after:${after.replaceAll("-", "/")}`;
-  if (before) query += ` before:${before.replaceAll("-", "/")}`;
-
-  const { client, email } = await gmailFor();
-  console.log(`mailbox: ${email}\nquery:   ${query}`);
-
-  const ids: string[] = [];
-  let pageToken: string | undefined;
-  do {
-    const { data } = await client.users.messages.list({
-      userId: "me",
-      q: query,
-      maxResults: 500,
-      pageToken,
-    });
-    for (const m of data.messages ?? []) if (m.id) ids.push(m.id);
-    pageToken = data.nextPageToken ?? undefined;
-  } while (pageToken);
-
-  // messages.list is newest first.
-  ids.reverse();
-  console.log(`matched: ${ids.length}`);
-  if (dryRun || !ids.length) return;
-
-  let ingested = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (const [i, id] of ids.entries()) {
-    try {
-      const result = await ingestGmailMessage(client, id);
-      if (result.status === "ingested") ingested++;
-      else skipped++;
-    } catch (err) {
-      failed++;
-      console.error(`ingest failed for gmail message ${id}`, err);
-    }
-    if ((i + 1) % 50 === 0) {
-      console.log(`${i + 1}/${ids.length}  ingested=${ingested} skipped=${skipped} failed=${failed}`);
-    }
-  }
-
-  console.log(
-    JSON.stringify({ scanned: ids.length, ingested, skipped, failed }, null, 2),
+  const query = backfillQuery(
+    arg("query") ?? `label:"${env.labelName}"`,
+    arg("after"),
+    arg("before"),
   );
-  if (failed) process.exitCode = 1;
+  console.log(`query: ${query}`);
+
+  // A zero budget lists and dedupes without ingesting anything.
+  const result = await backfillBatch(query, dryRun ? 0 : Infinity);
+  if (dryRun) {
+    console.log(`matched: ${result.matched}, not yet imported: ${result.remaining}`);
+    return;
+  }
+  console.log(JSON.stringify(result, null, 2));
+  if (result.failed) process.exitCode = 1;
 }
 
 main()

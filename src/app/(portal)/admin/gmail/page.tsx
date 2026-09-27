@@ -2,8 +2,14 @@ import Link from "next/link";
 import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { requireGmailOwner } from "@/lib/auth";
 import { getSyncRow } from "@/lib/gmail/client";
-import { disconnectGmail, renewWatch, runSyncNow } from "@/lib/actions/admin";
 import {
+  disconnectGmail,
+  renewWatch,
+  runBackfillBatch,
+  runSyncNow,
+} from "@/lib/actions/admin";
+import {
+  BackfillForm,
   DisconnectForm,
   PlainActionButton,
 } from "@/components/admin/forms";
@@ -19,6 +25,8 @@ import { env } from "@/lib/env";
 import { relativeTime } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+// Server actions on this page inherit it; each backfill batch runs ~4 minutes.
+export const maxDuration = 300;
 
 const HOURS_48 = 48 * 60 * 60 * 1000;
 
@@ -128,6 +136,25 @@ export default async function GmailAdminPage({
           )}
         </CardContent>
       </Card>
+
+      {row && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Backfill past mail</CardTitle>
+            <CardDescription>
+              Imports older mail the watch never saw, oldest first. Safe to re-run:
+              anything already imported is skipped. Leave the date empty to import
+              everything.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BackfillForm
+              action={runBackfillBatch}
+              defaultQuery={`list:${env.groupEmail.replace("@", ".")}`}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

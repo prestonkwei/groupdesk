@@ -7,6 +7,7 @@ import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
 import { requireAdmin, requireGmailOwner } from "@/lib/auth";
 import { slugify } from "@/lib/utils";
 import { startWatch } from "@/lib/gmail/sync";
+import { backfillBatch, backfillQuery, type BackfillBatch } from "@/lib/gmail/backfill";
 import type { ActionState } from "./tickets";
 
 export type { ActionState };
@@ -159,6 +160,28 @@ export async function runSyncNow(): Promise<ActionState> {
     return {
       ok: `Scanned ${s.scanned}, ingested ${s.ingested}${s.fullResync ? " (full resync)" : ""}`,
     };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * One batch of the /admin/gmail backfill. Runs for up to ~4 minutes (the page
+ * sets maxDuration = 300); the client keeps calling until nothing remains.
+ */
+export async function runBackfillBatch(input: {
+  query: string;
+  after?: string;
+}): Promise<BackfillBatch | { error: string }> {
+  await requireGmailOwner();
+  if (!input.query.trim()) return { error: "Enter a Gmail search" };
+  try {
+    const result = await backfillBatch(
+      backfillQuery(input.query, input.after || undefined),
+      240_000,
+    );
+    revalidatePath("/tickets");
+    return result;
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) };
   }

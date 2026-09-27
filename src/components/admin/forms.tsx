@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useEffect } from "react";
+import { useActionState, useRef, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionState } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
@@ -229,6 +229,94 @@ export function DisconnectForm({
         Disconnect
       </Button>
       <Status state={state} />
+    </form>
+  );
+}
+
+/* -------------------------------------------------------------- backfill */
+
+type BackfillResult =
+  | { matched: number; ingested: number; skipped: number; failed: number; remaining: number; firstError: string | null }
+  | { error: string };
+
+export function BackfillForm({
+  action,
+  defaultQuery,
+}: {
+  action: (input: { query: string; after?: string }) => Promise<BackfillResult>;
+  defaultQuery: string;
+}) {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const stop = useRef(false);
+
+  async function run(form: FormData) {
+    const query = String(form.get("query") ?? "");
+    const after = String(form.get("after") ?? "");
+    stop.current = false;
+    setRunning(true);
+    setError(null);
+    setProgress("Listing matching mail…");
+
+    let imported = 0;
+    let failed = 0;
+    try {
+      // Each call imports for up to ~4 minutes; keep going until nothing is left.
+      while (!stop.current) {
+        const r = await action({ query, after });
+        if ("error" in r) {
+          setError(r.error);
+          break;
+        }
+        imported += r.ingested + r.skipped;
+        failed += r.failed;
+        if (r.firstError) setError(`Some messages failed: ${r.firstError}`);
+        setProgress(
+          `${r.matched} matched · ${imported} imported this run · ${r.remaining} left` +
+            (failed ? ` · ${failed} failed` : ""),
+        );
+        // Done, or a batch that made no progress (only failures): stop looping.
+        if (r.remaining === 0 || r.ingested + r.skipped === 0) break;
+      }
+      if (stop.current) setProgress((p) => `${p ?? ""} · stopped`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <form action={run} className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          name="query"
+          defaultValue={defaultQuery}
+          required
+          disabled={running}
+          className="w-72"
+          aria-label="Gmail search"
+        />
+        <Input
+          name="after"
+          type="date"
+          disabled={running}
+          className="w-40"
+          aria-label="Only mail after"
+        />
+        {running ? (
+          <Button type="button" size="sm" variant="outline" onClick={() => (stop.current = true)}>
+            Stop after this batch
+          </Button>
+        ) : (
+          <Button type="submit" size="sm">
+            Backfill
+          </Button>
+        )}
+      </div>
+      {progress && <p className="text-xs text-[var(--muted-foreground)]">{progress}</p>}
+      {error && <p className="text-xs text-[var(--destructive)]">{error}</p>}
     </form>
   );
 }
