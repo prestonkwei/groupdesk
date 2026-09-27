@@ -158,6 +158,19 @@ plan allows. Between those, the catch-up runs two other ways:
   on; it skips quietly without it. Set the repository variable `APP_URL` if the
   site moves off `https://tickets.example.org`.
 
+Two more scheduled jobs:
+
+- `/api/cron/daily` auto-solves tickets left **pending** (waiting on the
+  requester) with no reply for `AUTO_SOLVE_DAYS` (default 7). A reply from
+  the requester moves a pending ticket back to open, so only true silence
+  counts. Closed is for non-requests (notifications, spam) and is never set
+  automatically; reports leave closed tickets out.
+- `/api/cron/digest` and `/api/cron/digest-winter` email every active agent
+  their weekly digest at 4pm Friday Pacific. Vercel cron is UTC with no DST,
+  so both fire and only the one landing in 4pm Pacific sends. Replies to the
+  digest (subject `[helpdesk digest]`) are ignored by ingest. Admins can send
+  themselves a preview from `/admin/reports`.
+
 The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
 
 ## Security notes

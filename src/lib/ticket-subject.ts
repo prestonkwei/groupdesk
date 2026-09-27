@@ -17,3 +17,10 @@ export function ticketNumberFromSubject(subject: string | null | undefined): num
 export function stripTicketTag(subject: string) {
   return subject.replace(TAG_RE, "").trim();
 }
+
+/** The weekly digest's subject marker; ingest ignores replies to it. */
+export const DIGEST_TAG = "[helpdesk digest]";
+
+export function isDigestSubject(subject: string | null | undefined) {
+  return !!subject && subject.toLowerCase().includes(DIGEST_TAG.toLowerCase());
+}

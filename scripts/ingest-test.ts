@@ -10,7 +10,7 @@ process.env.TOKEN_ENC_KEY ??= randomBytes(32).toString("base64");
 
 import PostalMime from "postal-mime";
 import { __test } from "../src/lib/gmail/ingest";
-import { taggedSubject, ticketNumberFromSubject } from "../src/lib/ticket-subject";
+import { isDigestSubject, taggedSubject, ticketNumberFromSubject } from "../src/lib/ticket-subject";
 import { decryptSecret, encryptSecret } from "../src/lib/crypto";
 
 /** A group-rewritten reply: From says the list, the person is in X-Original-From. */
@@ -80,6 +80,8 @@ async function main() {
     ["ticket number read from subject", ticketNumberFromSubject("Re: [TICKET: #1058] Copies"), 1058],
     ["no tag, no number", ticketNumberFromSubject("Copies of CC notes"), null],
     ["reply subject is tagged once", taggedSubject(1058, "[TICKET: #1058] Copies"), "[TICKET: #1058] Copies"],
+    ["replies to the digest are recognised", isDigestSubject("Re: [helpdesk digest] 4 open, 2 pending"), true],
+    ["ordinary subjects are not digests", isDigestSubject("Digest of CC notes"), false],
     ["bare address parses", __test.parseAddress("a@b.co")?.email, "a@b.co"],
     ["non-address rejected", __test.parseAddress("not an address"), null],
   ];

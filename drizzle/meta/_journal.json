@@ -22,6 +22,13 @@
       "when": 1790538006469,
       "tag": "0002_reports_presence_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790538989162,
+      "tag": "0003_digest",
+      "breakpoints": true
     }
   ]
 }

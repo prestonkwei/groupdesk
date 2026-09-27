@@ -25,6 +25,9 @@ function describe(e: ThreadEvent): string {
     case "unassigned":
       return d.assigneeName ? `${who} unassigned ${d.assigneeName}` : `${who} unassigned`;
     case "status":
+      if ((e.data as { auto?: boolean }).auto) {
+        return `Auto-solved after ${d.days ?? "several"} days without a reply`;
+      }
       return `${who} set status to ${d.to}`;
     case "priority":
       return `${who} set priority to ${d.to}`;

@@ -258,6 +258,7 @@ export function TicketProperties() {
           items={STATUSES.map((s) => ({
             value: s.value,
             label: s.label,
+            hint: s.hint,
             icon: <StatusIcon status={s.value} />,
           }))}
           onSelect={(v) =>

@@ -182,3 +182,27 @@ function cleanHtml(html: string) {
     .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
     .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*/gi, "$1=$2#");
 }
+
+/**
+ * A one-off automated email (e.g. the weekly digest): no ticket, no
+ * threading. Marked auto-generated so out-of-office replies stay quiet.
+ */
+export async function sendNotice(args: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  fromName?: string;
+}) {
+  const { client } = await gmailFor();
+  const msg = createMimeMessage();
+  msg.setSender({ name: args.fromName ?? "Tickets", addr: env.groupEmail });
+  msg.setTo(args.to);
+  msg.setSubject(args.subject);
+  msg.setHeader("Auto-Submitted", "auto-generated");
+  msg.setHeader("X-Auto-Response-Suppress", "All");
+  msg.addMessage({ contentType: "text/plain", encoding: "base64", data: base64Lines(args.text) });
+  msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(args.html) });
+  const raw = Buffer.from(msg.asRaw()).toString("base64url");
+  await client.users.messages.send({ userId: "me", requestBody: { raw } });
+}

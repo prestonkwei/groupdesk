@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { buildReport, RANGES, type Breakdown, type ReportRange } from "@/lib/reports";
 import { VolumeChart } from "@/components/volume-chart";
+import { PlainActionButton } from "@/components/admin/forms";
+import { previewDigest } from "@/lib/actions/admin";
 import { TagDot } from "@/components/ui/badge";
 import { cn, shortDate } from "@/lib/utils";
 
@@ -102,10 +104,21 @@ export default async function ReportsPage({
         <BreakdownTable title="By tag" rows={report.byTag} tags />
         <BreakdownTable title="By agent" rows={report.byAgent} note="Tickets assigned to them; a ticket with two assignees counts for both." />
 
+        <section className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold">Weekly digest</h2>
+            <p className="text-xs text-[var(--muted-foreground)]">
+              Every Friday at 4pm Pacific, each agent gets their open and pending counts, what they solved that
+              week, their longest-open ticket and links to the rest.
+            </p>
+          </div>
+          <PlainActionButton action={previewDigest} label="Email me a preview" />
+        </section>
+
         <p className="pb-4 text-xs text-[var(--muted-foreground)]">
           First response: the first email from the requester to the first reply from the team (portal or Gmail).
-          Time to resolve: when the email came in to the first time it was marked solved or closed. Both are medians,
-          in calendar time (not business hours).
+          Time to resolve: when the email came in to the first time it was marked solved. Both are medians, in
+          calendar time (not business hours). Closed tickets (notifications and other non-requests) aren&apos;t counted.
         </p>
       </div>
     </div>

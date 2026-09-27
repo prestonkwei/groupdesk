@@ -462,7 +462,7 @@ export function TicketList({
               onOpenChange={(o) => setBulkPicker(o ? "status" : null)}
               placeholder="Set status…"
               selected={[common((r) => r.status) ?? ""]}
-              items={STATUSES.map((s) => ({ value: s.value, label: s.label, icon: <StatusIcon status={s.value} /> }))}
+              items={STATUSES.map((s) => ({ value: s.value, label: s.label, hint: s.hint, icon: <StatusIcon status={s.value} /> }))}
               onSelect={(v) => apply({ kind: "status", status: v as TicketStatus })}
               trigger={<BarButton k="c" icon={<StatusIcon status={common((r) => r.status) ?? "open"} />}>Status</BarButton>}
             />

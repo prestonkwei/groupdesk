@@ -73,15 +73,17 @@ const dayKey = new Intl.DateTimeFormat("en-CA", {
  *   (from the portal or straight from Gmail). Tickets we started ourselves
  *   have no inbound first message, so they don't count here.
  * - Time to resolve: when the email came in → the first time the ticket was
- *   marked solved or closed. Tickets closed outside the app (no status
- *   event) have no resolve time.
+ *   marked solved (by hand or by auto-solve). Tickets solved outside the app
+ *   (no status event) have no resolve time.
+ * - Closed tickets are left out altogether: closed means "not a request".
  * - Imported (backfilled) tickets are left out unless asked for: they were
  *   answered before the portal existed, so their timings would be noise.
  */
 export async function buildReport(range: ReportRange, includeImported: boolean) {
   const days = RANGES.find((r) => r.value === range)?.days ?? 30;
   const from = days ? new Date(Date.now() - days * 86_400_000) : new Date(0);
-  const inRange = sql`tk.created_at >= ${from} and (${includeImported} or not tk.imported)`;
+  // Closed = never a real request (notifications, spam), so it's not counted.
+  const inRange = sql`tk.created_at >= ${from} and (${includeImported} or not tk.imported) and tk.status <> 'closed'`;
 
   const { rows } = await db.execute<TicketRow>(sql`
     with t as (
@@ -105,7 +107,7 @@ export async function buildReport(range: ReportRange, includeImported: boolean) 
     res as (
       select e.ticket_id, min(e.created_at) as at
         from events e join t on t.id = e.ticket_id
-       where e.kind = 'status' and e.data->>'to' in ('solved', 'closed')
+       where e.kind = 'status' and e.data->>'to' = 'solved'
        group by e.ticket_id
     )
     select t.*, fi.at as first_in, fo.at as first_out, res.at as resolved_at
@@ -192,7 +194,7 @@ export async function buildReport(range: ReportRange, includeImported: boolean) 
     : Number(
         (
           await db.execute<{ n: number }>(
-            sql`select count(*)::int as n from tickets where imported and created_at >= ${from}`,
+            sql`select count(*)::int as n from tickets where imported and status <> 'closed' and created_at >= ${from}`,
           )
         ).rows[0]?.n ?? 0,
       );

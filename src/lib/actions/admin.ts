@@ -216,3 +216,14 @@ export async function disconnectGmail(
   revalidatePath("/admin/gmail");
   return { ok: "Disconnected. Connect again to resume ingestion." };
 }
+
+/* ---------------------------------------------------------------- digest */
+
+/** Send yourself this week's digest now, without marking it sent. */
+export async function previewDigest(): Promise<ActionState> {
+  const { agent } = await requireAdmin();
+  const { sendWeeklyDigests } = await import("@/lib/digest");
+  const [result] = await sendWeeklyDigests({ force: true, onlyAgentId: agent.id });
+  if (!result) return { error: "Your agent record is inactive" };
+  return result.ok ? { ok: `Sent to ${result.email}` } : { error: result.error };
+}

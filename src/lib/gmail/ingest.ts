@@ -6,7 +6,7 @@ import { db, type Tx } from "@/db";
 import { agents, attachments, events, messages, tickets } from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
-import { stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
+import { isDigestSubject, stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
 
 export type IngestResult =
   | { status: "skipped"; reason: string }
@@ -155,6 +155,11 @@ export async function ingestParsedEmail(input: {
       ? new Date(input.internalDate)
       : new Date();
 
+  // Replies to the weekly digest (sent from the group address) aren't requests.
+  if (isDigestSubject(subject)) {
+    return { status: "skipped", reason: "reply to the weekly digest" };
+  }
+
   // Our own outbound copy coming back around through the group.
   if (rfcMessageId) {
     const dupe = await db
@@ -222,9 +227,12 @@ export async function ingestParsedEmail(input: {
       return { status: "skipped" as const, reason: "raced with another delivery" };
     }
 
+    // A reply from the requester puts the ball back in our court: solved and
+    // closed tickets reopen, and "pending" (waiting on them) goes back to open
+    // so it can't be auto-solved while their answer sits unread.
     const reopened =
       direction === "inbound" &&
-      (ticket.status === "solved" || ticket.status === "closed");
+      (ticket.status === "solved" || ticket.status === "closed" || ticket.status === "pending");
 
     await tx
       .update(tickets)

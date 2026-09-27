@@ -40,6 +40,8 @@ export const agents = pgTable(
     name: text("name").notNull(),
     role: agentRole("role").notNull().default("agent"),
     active: boolean("active").notNull().default(true),
+    /** When the weekly digest last went out to them; stops double sends. */
+    lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
