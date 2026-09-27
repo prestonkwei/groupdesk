@@ -174,13 +174,21 @@ export function NameForm({
   );
 }
 
-export function DeleteForm({ action, id }: { action: Action; id: string }) {
+export function DeleteForm({
+  action,
+  id,
+  label = "Delete",
+}: {
+  action: Action;
+  id: string;
+  label?: string;
+}) {
   const [, formAction, pending] = useActionState<ActionState, FormData>(action, {});
   return (
     <form action={formAction}>
       <input type="hidden" name="id" value={id} />
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
-        Delete
+        {label}
       </Button>
     </form>
   );

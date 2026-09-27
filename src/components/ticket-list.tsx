@@ -25,6 +25,7 @@ import {
   StatusIcon,
 } from "@/components/ui/ticket-icons";
 import { AgeBadge } from "@/components/ui/age-badge";
+import { SlaPill } from "@/components/ui/sla-pill";
 import { Kbd } from "@/components/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -417,6 +418,7 @@ export function TicketList({
                     <span className="block size-6 rounded-full border border-dashed border-[var(--input)]" />
                   )}
                 </span>
+                {t.replyDueAt && <SlaPill dueAt={t.replyDueAt} className="hidden md:inline-flex" />}
                 <AgeBadge
                   since={t.createdAt}
                   resolved={!unsolved}

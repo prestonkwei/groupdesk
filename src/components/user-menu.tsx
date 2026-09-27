@@ -1,8 +1,11 @@
 "use client";
 
+import { useOptimistic, useTransition } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { LogOut } from "lucide-react";
+import { Bell, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
+import { setNotifyEmail } from "@/lib/actions/views";
+import { cn } from "@/lib/utils";
 
 /**
  * Avatar menu. Logging out ends the Cloudflare Access session via Access's
@@ -13,13 +16,17 @@ export function UserMenu({
   email,
   photo,
   logoutUrl,
+  notifyEmail,
 }: {
+  notifyEmail: boolean;
   name: string;
   email: string;
   photo: string | null;
   /** Null when Access isn't in front of the app (local dev). */
   logoutUrl: string | null;
 }) {
+  const [notify, setNotify] = useOptimistic(notifyEmail);
+  const [, start] = useTransition();
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -45,6 +52,40 @@ export function UserMenu({
               <p className="truncate text-xs text-[var(--muted-foreground)]">{email}</p>
             </div>
           </div>
+          <div className="my-1 h-px bg-[var(--border)]" />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={notify}
+            onClick={() =>
+              start(async () => {
+                setNotify(!notify);
+                await setNotifyEmail(!notify);
+              })
+            }
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--accent)]"
+          >
+            <Bell className="size-4 text-[var(--muted-foreground)]" />
+            <span className="flex-1">
+              Email notifications
+              <span className="block text-[11px] text-[var(--muted-foreground)]">
+                Assigned, replies, @mentions
+              </span>
+            </span>
+            <span
+              className={cn(
+                "relative h-4 w-7 shrink-0 rounded-full transition-colors",
+                notify ? "bg-[var(--primary)]" : "bg-[var(--input)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 size-3 rounded-full bg-white transition-all",
+                  notify ? "left-3.5" : "left-0.5",
+                )}
+              />
+            </span>
+          </button>
           <div className="my-1 h-px bg-[var(--border)]" />
           {logoutUrl ? (
             // A full page load, not a client navigation: Cloudflare handles it.

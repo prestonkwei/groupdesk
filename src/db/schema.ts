@@ -42,6 +42,8 @@ export const agents = pgTable(
     active: boolean("active").notNull().default(true),
     /** When the weekly digest last went out to them; stops double sends. */
     lastDigestAt: timestamp("last_digest_at", { withTimezone: true }),
+    /** Email me when I'm assigned, a requester replies on my ticket, or I'm @mentioned. */
+    notifyEmail: boolean("notify_email").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -107,6 +109,8 @@ export const tickets = pgTable(
     gmailThreadId: text("gmail_thread_id"),
     /** Came in through the backfill; reports leave these out by default. */
     imported: boolean("imported").notNull().default(false),
+    /** Set when this ticket was merged into another; its page redirects there. */
+    mergedIntoId: uuid("merged_into_id"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -321,6 +325,33 @@ export const templates = pgTable(
   (t) => [index("templates_name_idx").on(t.name)],
 );
 
+/* ------------------------------------------------------------ saved views */
+
+/** A named list filter (the /tickets query string), per agent. */
+export const savedViews = pgTable(
+  "saved_views",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    query: text("query").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("saved_views_agent_idx").on(t.agentId, t.position)],
+);
+
+/* ---------------------------------------------------------------- spam */
+
+/** Senders marked as spam: new tickets from them are closed on arrival. */
+export const blockedSenders = pgTable("blocked_senders", {
+  email: text("email").primaryKey(),
+  blockedBy: uuid("blocked_by").references(() => agents.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /* -------------------------------------------------------------- gmail sync */
 
 /** Single-row table (one connected mailbox), but keyed by email so it can grow. */
@@ -410,5 +441,6 @@ export type Tag = typeof tags.$inferSelect;
 export type TicketEvent = typeof events.$inferSelect;
 export type GmailSync = typeof gmailSync.$inferSelect;
 export type Template = typeof templates.$inferSelect;
+export type SavedView = typeof savedViews.$inferSelect;
 export type TicketPriority = (typeof ticketPriority.enumValues)[number];
 export type TicketStatus = (typeof ticketStatus.enumValues)[number];

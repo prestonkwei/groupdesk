@@ -3,9 +3,18 @@ import PostalMime, { type Email, type Address } from "postal-mime";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { db, type Tx } from "@/db";
-import { agents, attachments, events, messages, tickets, type Ticket } from "@/db/schema";
+import {
+  agents,
+  attachments,
+  blockedSenders,
+  events,
+  messages,
+  tickets,
+  type Ticket,
+} from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
+import { notifyReply } from "@/lib/notify";
 import { isDigestSubject, stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
 
 export type IngestResult =
@@ -240,6 +249,26 @@ export async function ingestParsedEmail(input: {
       imported: input.imported ?? false,
     });
 
+    // Senders marked as spam still land (so nothing is lost) but closed.
+    if (created && direction === "inbound") {
+      const requester = (forwarded ?? sender).email;
+      const [blocked] = await tx
+        .select({ email: blockedSenders.email })
+        .from(blockedSenders)
+        .where(eq(blockedSenders.email, requester))
+        .limit(1);
+      if (blocked) {
+        await tx.update(tickets).set({ status: "closed" }).where(eq(tickets.id, ticket.id));
+        ticket.status = "closed";
+        await tx.insert(events).values({
+          ticketId: ticket.id,
+          kind: "spam",
+          data: { email: requester, auto: true },
+          createdAt: sentAt,
+        });
+      }
+    }
+
     if (created && forwarded) {
       await tx.insert(events).values({
         ticketId: ticket.id,
@@ -313,8 +342,21 @@ export async function ingestParsedEmail(input: {
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       messageId: inserted.id,
+      // Tell assignees about a fresh reply (not about old mail the backfill
+      // or a catch-up is filling in).
+      notify:
+        !created && isNewest && direction === "inbound" && !input.imported
+          ? { id: ticket.id, number: ticket.number, subject: ticket.subject }
+          : null,
     };
   });
+
+  if (result.status === "ingested" && result.notify) {
+    const snippet = (parsed.text ?? "").split(/\n\s*On .{5,200}wrote:/)[0].trim().slice(0, 400);
+    await notifyReply(result.notify, forwarded ?? sender, snippet).catch((err) =>
+      console.error("reply notification failed", err),
+    );
+  }
 
   if (result.status === "ingested") {
     await storeAttachments(result.messageId, parsed);
@@ -324,7 +366,23 @@ export async function ingestParsedEmail(input: {
 
 /* ------------------------------------------------------------- threading */
 
+/** Finds the ticket for an email (following merges) or creates one. */
 async function findOrCreateTicket(
+  tx: Tx,
+  args: Parameters<typeof findOrCreateTicketRaw>[1],
+): Promise<{ ticket: Ticket; created: boolean }> {
+  const result = await findOrCreateTicketRaw(tx, args);
+  let ticket = result.ticket;
+  // A merged ticket forwards to the one it went into.
+  for (let hops = 0; ticket.mergedIntoId && hops < 5; hops++) {
+    const [next] = await tx.select().from(tickets).where(eq(tickets.id, ticket.mergedIntoId)).limit(1);
+    if (!next) break;
+    ticket = next;
+  }
+  return { ticket, created: result.created };
+}
+
+async function findOrCreateTicketRaw(
   tx: Tx,
   args: {
     inReplyTo: string | null;

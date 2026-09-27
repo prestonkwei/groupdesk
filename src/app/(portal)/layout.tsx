@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { canManageGmail, requireAgent } from "@/lib/auth";
-import { listTags, listTeams, viewCounts } from "@/lib/queries";
+import { listSavedViews, listTags, listTeams, viewCounts } from "@/lib/queries";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { photosFor } from "@/lib/people";
@@ -15,11 +15,12 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const { agent } = await requireAgent();
-  const [counts, teams, tags, photos] = await Promise.all([
+  const [counts, teams, tags, photos, views] = await Promise.all([
     viewCounts(agent),
     listTeams(),
     listTags(),
     photosFor([agent.email]),
+    listSavedViews(agent.id),
   ]);
 
   const sidebar = {
@@ -28,6 +29,7 @@ export default async function PortalLayout({
     tags: tags.map((t) => ({ name: t.name, slug: t.slug, color: t.color })),
     isAdmin: agent.role === "admin",
     canManageGmail: canManageGmail(agent),
+    savedViews: views,
   };
 
   return (
@@ -46,6 +48,7 @@ export default async function PortalLayout({
             email={agent.email}
             photo={photos[agent.email.toLowerCase()] ?? null}
             logoutUrl={env.cfTeamDomain && env.cfAud ? "/cdn-cgi/access/logout" : null}
+            notifyEmail={agent.notifyEmail}
           />
         </div>
       </header>

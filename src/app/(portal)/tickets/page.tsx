@@ -7,14 +7,18 @@ import {
   listTags,
   listTeams,
   countTickets,
+  listSavedViews,
   listTickets,
+  SORTS,
   type TicketFilters,
+  type TicketSort,
   type TicketView,
 } from "@/lib/queries";
 import { photosFor } from "@/lib/people";
 import { LiveRefresh } from "@/components/live-refresh";
 import { SearchBox } from "@/components/search-box";
 import { TicketList } from "@/components/ticket-list";
+import { ListControls } from "@/components/list-controls";
 
 export const dynamic = "force-dynamic";
 
@@ -38,27 +42,37 @@ export default async function TicketsPage({
     return Array.isArray(v) ? v[0] : v;
   };
 
+  const sort = one("sort");
+  const dir = one("dir");
   const filters: TicketFilters = {
     view: (one("view") as TicketView) ?? (one("team") || one("tag") ? "all" : "unsolved"),
     team: one("team"),
     tag: one("tag"),
     status: one("status"),
+    priority: one("priority"),
+    assignee: one("assignee"),
     q: one("q"),
+    sort: SORTS.some((s) => s.value === sort) ? (sort as TicketSort) : undefined,
+    dir: dir === "asc" || dir === "desc" ? dir : undefined,
   };
 
-  const [rows, total, agentList, teamList, tagList] = await Promise.all([
+  const [rows, total, agentList, teamList, tagList, views] = await Promise.all([
     listTickets(filters, agent),
     countTickets(filters, agent),
     listAgents(true),
     listTeams(),
     listTags(),
+    listSavedViews(agent.id),
   ]);
   const photos = await photosFor([
     ...rows.map((r) => r.requesterEmail),
     ...agentList.map((a) => a.email),
   ]);
 
-  const title = filters.team
+  const savedView = views.find((v) => v.id === one("saved"));
+  const title = savedView
+    ? savedView.name
+    : filters.team
     ? `Team: ${filters.team}`
     : filters.tag
       ? `Tag: ${filters.tag}`
@@ -86,6 +100,21 @@ export default async function TicketsPage({
           </Suspense>
         </div>
       </div>
+
+      <Suspense fallback={<div className="h-11 shrink-0 border-b border-[var(--border)]" />}>
+        <ListControls
+          agents={agentList.map((a) => ({
+            id: a.id,
+            name: a.name,
+            email: a.email,
+            photo: photos[a.email.toLowerCase()] ?? null,
+          }))}
+          teams={teamList.map((t) => ({ slug: t.slug, name: t.name }))}
+          tags={tagList.map((t) => ({ slug: t.slug, name: t.name, color: t.color }))}
+          sorts={SORTS}
+          me={agent.id}
+        />
+      </Suspense>
 
       <TicketList
         // A new view or search starts again from page one.

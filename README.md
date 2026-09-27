@@ -126,6 +126,20 @@ name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
   and friends are filled in, with `{{first_name|there}}` as a fallback form.
 - **Reports** (`/admin/reports`, admins) leave out tickets marked `imported`
   (created by the backfill) unless asked to include them.
+- **Reply targets (SLA)** are in school hours, Mon–Fri 8am–4pm Pacific
+  (`NEXT_PUBLIC_SCHOOL_HOURS="08:00-16:00"` to change): P0 2h, P1 4h, P2 or
+  none 1 school day, P3 2 school days, counted from the requester's first
+  unanswered email on an open ticket. Holidays aren't modelled.
+- **Notifications** email an agent when they're assigned, when a requester
+  replies on their ticket, or when they're @mentioned in a note. Each agent
+  can switch them off from the avatar menu. Subjects carry `[helpdesk notice]`;
+  replies to them are ignored.
+- **Merge** (ticket ⋯ menu) moves one ticket's emails, notes, tags and
+  assignees into another; the old number redirects. **Mark as spam** closes it
+  and blocks the sender (new mail from them arrives closed); unblock at
+  `/admin/spam`.
+- **Saved views**: filters and sort live in the URL; "Save view" stores the
+  current one in your sidebar.
 - **Search** is fuzzy (`pg_trgm`, enabled by migration 0001): typo-tolerant on
   subject and requester, plus exact text in message bodies and `#1234`.
 

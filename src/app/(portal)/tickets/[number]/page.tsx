@@ -1,4 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { tickets } from "@/db/schema";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 import { requireAgent } from "@/lib/auth";
@@ -21,6 +24,7 @@ import { env } from "@/lib/env";
 import { Thread } from "@/components/thread";
 import { RequesterHistory } from "@/components/requester-history";
 import { RequesterCard } from "@/components/requester-card";
+import { TicketMenu } from "@/components/ticket-menu";
 import { Composer } from "@/components/composer";
 import {
   MobileDetails,
@@ -32,6 +36,8 @@ import {
 } from "@/components/ticket-workspace";
 import { Avatar } from "@/components/ui/avatar";
 import { AgeBadge } from "@/components/ui/age-badge";
+import { SlaPill } from "@/components/ui/sla-pill";
+import { replyDueAt } from "@/lib/sla";
 import { dateTime, relativeTime, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +55,14 @@ export default async function TicketPage({
 
   const ticket = await getTicketByNumber(n, agent);
   if (!ticket) notFound();
+  if (ticket.mergedIntoId) {
+    const [target] = await db
+      .select({ number: tickets.number })
+      .from(tickets)
+      .where(eq(tickets.id, ticket.mergedIntoId))
+      .limit(1);
+    if (target) redirect(`/tickets/${target.number}`);
+  }
 
   const [thread, agentList, teamList, tagList, activeTagIds, assigneeIds, nav, history, templateList] =
     await Promise.all([
@@ -69,6 +83,14 @@ export default async function TicketPage({
     ...thread.messages.map((m) => m.authorEmail ?? m.fromEmail),
   ]);
   const photo = (email: string) => photos[email.toLowerCase()] ?? null;
+
+  // Reply target: the requester's first unanswered email, if the ticket is open.
+  const lastOut = thread.messages.filter((m) => m.direction === "outbound").at(-1)?.sentAt;
+  const waiting =
+    ticket.status === "open"
+      ? thread.messages.find((m) => m.direction === "inbound" && (!lastOut || m.sentAt > lastOut))?.sentAt
+      : undefined;
+  const dueAt = waiting ? replyDueAt(new Date(waiting), ticket.priority) : null;
   const requesterLabel = ticket.requesterName || ticket.requesterEmail;
   const recipients = replyRecipients(ticket, thread.messages, {
     group: env.groupEmail,
@@ -161,6 +183,7 @@ export default async function TicketPage({
             <div className="ml-auto flex min-w-0 items-center gap-2">
               <PresenceBar />
               <StarButton />
+              <TicketMenu ticketId={ticket.id} number={ticket.number} />
             </div>
           </header>
 
@@ -201,6 +224,12 @@ export default async function TicketPage({
                 <span>
                   {thread.messages.filter((m) => m.direction !== "note").length} messages
                 </span>
+                {dueAt && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <SlaPill dueAt={dueAt} />
+                  </>
+                )}
               </p>
             </div>
             <Thread messages={thread.messages} events={thread.events} photos={photos} />
@@ -220,6 +249,9 @@ export default async function TicketPage({
             templates={templateList.map((t) => ({ id: t.id, name: t.name, bodyHtml: t.bodyHtml }))}
             ticketNumber={ticket.number}
             ticketSubject={ticket.subject}
+            agents={agentList
+              .filter((a) => a.id !== agent.id)
+              .map((a) => ({ id: a.id, name: a.name, email: a.email }))}
           />
         </div>
 

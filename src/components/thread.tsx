@@ -37,6 +37,12 @@ function describe(e: ThreadEvent): string {
       return d.via === "forward"
         ? `${who} forwarded this; requester set to ${d.toName ?? d.to}`
         : `${who} changed the requester to ${d.toName ?? d.to}`;
+    case "merged":
+      return `${who} merged #${d.fromNumber} (${d.fromSubject}) into this ticket`;
+    case "spam":
+      return (e.data as { auto?: boolean }).auto
+        ? `Closed automatically: ${d.email} is marked as spam`
+        : `${who} closed this as spam and blocked ${d.email}`;
     case "tag_added":
       return `${who} added ${d.tagName}`;
     case "tag_removed":

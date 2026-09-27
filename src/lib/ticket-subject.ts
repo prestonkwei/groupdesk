@@ -18,9 +18,11 @@ export function stripTicketTag(subject: string) {
   return subject.replace(TAG_RE, "").trim();
 }
 
-/** The weekly digest's subject marker; ingest ignores replies to it. */
+/** Subject markers for our own automated mail; ingest ignores replies to it. */
 export const DIGEST_TAG = "[helpdesk digest]";
+export const NOTICE_TAG = "[helpdesk notice]";
 
 export function isDigestSubject(subject: string | null | undefined) {
-  return !!subject && subject.toLowerCase().includes(DIGEST_TAG.toLowerCase());
+  const s = subject?.toLowerCase() ?? "";
+  return s.includes(DIGEST_TAG.toLowerCase()) || s.includes(NOTICE_TAG.toLowerCase());
 }

@@ -9,14 +9,19 @@ import { cn, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+/** School time: hours and minutes, or school days (8h) past two days. */
 function duration(sec: number | null) {
   if (sec === null) return "—";
   const min = sec / 60;
   if (min < 1) return "<1m";
   if (min < 60) return `${Math.round(min)}m`;
   const hr = min / 60;
-  if (hr < 48) return `${Math.floor(hr)}h ${Math.round(min % 60)}m`;
-  return `${(hr / 24).toFixed(1)}d`;
+  if (hr < 16) return `${Math.floor(hr)}h ${Math.round(min % 60)}m`;
+  return `${(hr / 8).toFixed(1)} days`;
+}
+
+function pct(n: number, of: number) {
+  return of ? `${Math.round((n / of) * 100)}%` : "—";
 }
 
 export default async function ReportsPage({
@@ -85,12 +90,13 @@ export default async function ReportsPage({
               : ""}
         </p>
 
-        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-6">
           <Tile label="Came in" value={o.tickets.toLocaleString()} />
           <Tile label="Resolved" value={o.resolved.toLocaleString()} sub={o.tickets ? `${Math.round((o.resolved / o.tickets) * 100)}%` : undefined} />
           <Tile label="Still open" value={o.open.toLocaleString()} />
           <Tile label="Median first response" value={duration(o.medianFirstResponse)} sub={`${o.responded} answered`} />
           <Tile label="Median time to resolve" value={duration(o.medianResolve)} />
+          <Tile label="Answered within target" value={pct(o.withinTarget, o.responded)} sub="P0 2h · P1 4h · P2 1d · P3 2d" />
         </dl>
 
         <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -124,8 +130,10 @@ export default async function ReportsPage({
 
         <p className="pb-4 text-xs text-[var(--muted-foreground)]">
           First response: the first email from the requester to the first reply from the team (portal or Gmail).
-          Time to resolve: when the email came in to the first time it was marked solved. Both are medians, in
-          calendar time (not business hours). Closed tickets (notifications and other non-requests) aren&apos;t counted.
+          Time to resolve: when the email came in to the first time it was marked solved. Both are medians in school
+          hours (Mon–Fri, 8am–4pm Pacific; a &ldquo;day&rdquo; is 8 school hours). Reply targets by priority: P0 2h,
+          P1 4h, P2 or none 1 school day, P3 2 school days. Closed tickets (notifications and other non-requests)
+          aren&apos;t counted.
         </p>
       </div>
     </div>
@@ -163,7 +171,7 @@ function BreakdownTable({
         <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">Nothing in this range.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="mt-2 w-full min-w-[560px] text-sm">
+          <table className="mt-2 w-full min-w-[640px] text-sm">
             <thead className="text-xs text-[var(--muted-foreground)]">
               <tr className="border-b border-[var(--border)]">
                 <th className="px-4 py-2 text-left font-medium">Name</th>
@@ -172,6 +180,7 @@ function BreakdownTable({
                 <th className="px-4 py-2 text-right font-medium">Open</th>
                 <th className="px-4 py-2 text-right font-medium">Median first response</th>
                 <th className="px-4 py-2 text-right font-medium">Median to resolve</th>
+                <th className="px-4 py-2 text-right font-medium">Within target</th>
               </tr>
             </thead>
             <tbody>
@@ -188,6 +197,7 @@ function BreakdownTable({
                   <td className="px-4 py-2 text-right tabular-nums">{r.open}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{duration(r.medianFirstResponse)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{duration(r.medianResolve)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{pct(r.withinTarget, r.responded)}</td>
                 </tr>
               ))}
             </tbody>

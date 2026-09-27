@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { TIME_ZONE } from "@/lib/utils";
+import { SLA_TARGET_HOURS, schoolSecondsBetween } from "@/lib/sla";
 
 export type ReportRange = "7d" | "30d" | "90d" | "365d" | "all";
 
@@ -17,6 +18,7 @@ type TicketRow = {
   id: string;
   created_at: Date;
   status: string;
+  priority: string;
   team_id: string | null;
   team_name: string | null;
   first_in: Date | null;
@@ -32,6 +34,8 @@ export type Stat = {
   medianFirstResponse: number | null;
   medianResolve: number | null;
   responded: number;
+  /** Answered within the priority's reply target (school hours). */
+  withinTarget: number;
 };
 
 export type Breakdown = { key: string; label: string; color?: string } & Stat;
@@ -43,11 +47,14 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-const secs = (a: Date | null, b: Date | null) =>
-  a && b ? Math.max(0, (b.getTime() - a.getTime()) / 1000) : null;
+/** Durations count school hours only (Mon–Fri, 8–4), like the reply targets. */
+const secs = (a: Date | null, b: Date | null) => (a && b ? schoolSecondsBetween(a, b) : null);
 
 function stats(rows: TicketRow[]): Stat {
-  const frt = rows.map((r) => secs(r.first_in, r.first_out)).filter((x): x is number => x !== null);
+  const answered = rows
+    .map((r) => ({ r, s: secs(r.first_in, r.first_out) }))
+    .filter((x): x is { r: TicketRow; s: number } => x.s !== null);
+  const frt = answered.map((x) => x.s);
   const ttr = rows.map((r) => secs(r.created_at, r.resolved_at)).filter((x): x is number => x !== null);
   return {
     tickets: rows.length,
@@ -56,6 +63,9 @@ function stats(rows: TicketRow[]): Stat {
     medianFirstResponse: median(frt),
     medianResolve: median(ttr),
     responded: frt.length,
+    withinTarget: answered.filter(
+      (x) => x.s <= (SLA_TARGET_HOURS[x.r.priority] ?? SLA_TARGET_HOURS.none) * 3600,
+    ).length,
   };
 }
 
@@ -87,7 +97,7 @@ export async function buildReport(range: ReportRange, includeImported: boolean) 
 
   const { rows } = await db.execute<TicketRow>(sql`
     with t as (
-      select tk.id, tk.created_at, tk.status::text as status, tk.team_id, tm.name as team_name
+      select tk.id, tk.created_at, tk.status::text as status, tk.priority::text as priority, tk.team_id, tm.name as team_name
         from tickets tk
         left join teams tm on tm.id = tk.team_id
        where ${inRange}

@@ -15,7 +15,11 @@ import {
   PenSquare,
   FileText,
   BarChart3,
+  Bookmark,
+  X,
+  Ban,
 } from "lucide-react";
+import { deleteView } from "@/lib/actions/views";
 import { cn } from "@/lib/utils";
 import { TagDot } from "@/components/ui/badge";
 
@@ -40,6 +44,7 @@ const ADMIN = [
   { href: "/admin/agents", label: "Agents", icon: UserCog },
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/tags", label: "Tags", icon: Tags },
+  { href: "/admin/spam", label: "Spam", icon: Ban },
   { href: "/admin/gmail", label: "Gmail", icon: Mail },
 ] as const;
 
@@ -50,6 +55,7 @@ export function Sidebar({
   isAdmin,
   canManageGmail,
   className,
+  savedViews = [],
 }: {
   counts: Counts;
   teams: { name: string; slug: string }[];
@@ -57,6 +63,7 @@ export function Sidebar({
   isAdmin: boolean;
   canManageGmail: boolean;
   className?: string;
+  savedViews?: { id: string; name: string; query: string }[];
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -115,6 +122,38 @@ export function Sidebar({
         <FileText className="size-4 text-[var(--muted-foreground)]" />
         Templates
       </Link>
+
+      {savedViews.length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Your views
+          </p>
+          {savedViews.map((v) => (
+            <div key={v.id} className="group flex items-center">
+              <Link
+                href={`/tickets?${v.query}&saved=${v.id}`}
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--accent)]",
+                  params.get("saved") === v.id && "bg-[var(--accent)] font-medium",
+                )}
+              >
+                <Bookmark className="size-3.5 shrink-0 text-[var(--muted-foreground)]" />
+                <span className="truncate">{v.name}</span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Delete the view “${v.name}”?`)) void deleteView(v.id);
+                }}
+                className="ml-0.5 hidden rounded p-1 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] group-hover:block"
+                aria-label={`Delete view ${v.name}`}
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {teams.length > 0 && (
         <div className="flex flex-col gap-0.5">

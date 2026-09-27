@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { notifyAssigned, notifyMentions } from "@/lib/notify";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -9,6 +11,7 @@ import {
   messages,
   tags,
   teams,
+  blockedSenders,
   ticketAssignees,
   ticketStars,
   ticketTags,
@@ -20,6 +23,7 @@ import { requireAgent } from "@/lib/auth";
 import { listTickets, type TicketFilters } from "@/lib/queries";
 import { photosFor } from "@/lib/people";
 import { sendReply } from "@/lib/gmail/send";
+import { env } from "@/lib/env";
 
 export type ActionState = { ok?: string; error?: string };
 
@@ -70,6 +74,7 @@ export async function toggleAssignee(
     kind: existing ? "unassigned" : "assigned",
     data: { assigneeId: agentId, assigneeName: target.name },
   });
+  if (!existing) after(() => notifyAssigned([ticket], [agentId], agent));
 
   refresh(ticket.number);
   return { ok: existing ? `Unassigned ${target.name}` : `Assigned to ${target.name}` };
@@ -268,6 +273,106 @@ export async function setRequester(
   return { ok: `Requester is now ${name ?? email}` };
 }
 
+/* ---------------------------------------------------------- merge / spam */
+
+/**
+ * Merge `sourceId` into ticket #`targetNumber`: its emails, notes, activity,
+ * tags, assignees and stars move over, and the old ticket is closed with a
+ * pointer so its number keeps working (the page redirects, and replies to it
+ * land on the target).
+ */
+export async function mergeTicket(
+  sourceId: string,
+  targetNumber: number,
+): Promise<ActionState & { number?: number }> {
+  const { agent } = await requireAgent();
+  const source = await ticketOr404(sourceId);
+  const [target] = await db.select().from(tickets).where(eq(tickets.number, targetNumber)).limit(1);
+  if (!target) return { error: `There's no ticket #${targetNumber}` };
+  if (target.id === source.id) return { error: "That's this ticket" };
+  if (target.mergedIntoId) return { error: `#${targetNumber} was itself merged; pick the ticket it went into` };
+
+  await db.transaction(async (tx) => {
+    await tx.update(messages).set({ ticketId: target.id }).where(eq(messages.ticketId, source.id));
+    await tx.update(events).set({ ticketId: target.id }).where(eq(events.ticketId, source.id));
+    await tx.execute(sql`
+      insert into ticket_tags (ticket_id, tag_id)
+      select ${target.id}, tag_id from ticket_tags where ticket_id = ${source.id}
+      on conflict do nothing`);
+    await tx.execute(sql`
+      insert into ticket_assignees (ticket_id, agent_id)
+      select ${target.id}, agent_id from ticket_assignees where ticket_id = ${source.id}
+      on conflict do nothing`);
+    await tx.execute(sql`
+      insert into ticket_stars (agent_id, ticket_id)
+      select agent_id, ${target.id} from ticket_stars where ticket_id = ${source.id}
+      on conflict do nothing`);
+    await tx.delete(ticketTags).where(eq(ticketTags.ticketId, source.id));
+    await tx.delete(ticketAssignees).where(eq(ticketAssignees.ticketId, source.id));
+    await tx.delete(ticketStars).where(eq(ticketStars.ticketId, source.id));
+    await tx
+      .update(tickets)
+      .set({
+        createdAt: sql`least(${tickets.createdAt}, ${source.createdAt})`,
+        lastMessageAt: sql`greatest(${tickets.lastMessageAt}, ${source.lastMessageAt})`,
+        updatedAt: new Date(),
+      })
+      .where(eq(tickets.id, target.id));
+    await tx
+      .update(tickets)
+      .set({ status: "closed", mergedIntoId: target.id, updatedAt: new Date() })
+      .where(eq(tickets.id, source.id));
+    await tx.insert(events).values({
+      ticketId: target.id,
+      actorAgentId: agent.id,
+      kind: "merged",
+      data: { fromNumber: source.number, fromSubject: source.subject },
+    });
+  });
+
+  refresh(source.number);
+  refresh(target.number);
+  return { ok: `Merged into #${target.number}`, number: target.number };
+}
+
+/** Candidates for "Merge into…": fuzzy search by subject, person or #number. */
+export async function findMergeTargets(query: string, excludeId: string) {
+  const { agent } = await requireAgent();
+  const rows = await listTickets({ view: "all", q: query.trim() || undefined }, agent, { limit: 8 });
+  return rows
+    .filter((r) => r.id !== excludeId)
+    .map((r) => ({
+      number: r.number,
+      subject: r.subject,
+      status: r.status,
+      requester: r.requesterName || r.requesterEmail,
+    }));
+}
+
+/**
+ * Close as spam and block the sender: new tickets from them arrive closed.
+ * Unblock from /admin/spam.
+ */
+export async function markSpam(ticketId: string): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const ticket = await ticketOr404(ticketId);
+  const email = ticket.requesterEmail.toLowerCase();
+  const ours = [env.groupEmail.toLowerCase(), env.gmailMailbox.toLowerCase()];
+  const [isAgent] = await db.select({ id: agents.id }).from(agents).where(sql`lower(${agents.email}) = ${email}`).limit(1);
+  if (ours.includes(email) || isAgent) return { error: "That's one of our own addresses; close it instead" };
+
+  await db.insert(blockedSenders).values({ email, blockedBy: agent.id }).onConflictDoNothing();
+  await db.update(tickets).set({ status: "closed", updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+  await db.insert(events).values({
+    ticketId,
+    actorAgentId: agent.id,
+    kind: "spam",
+    data: { email },
+  });
+  refresh(ticket.number);
+  return { ok: `Closed as spam; ${email} is blocked` };
+}
+
 /* ------------------------------------------------------------------ star */
 
 /** Stars are per agent, so this doesn't touch the ticket or its activity log. */
@@ -407,6 +512,13 @@ export async function bulkUpdate(ticketIds: string[], op: BulkOp): Promise<Actio
           data: { assigneeId: op.agentId, assigneeName: target.name },
         })),
       );
+      if (op.add) {
+        const refs = await db
+          .select({ id: tickets.id, number: tickets.number, subject: tickets.subject })
+          .from(tickets)
+          .where(inArray(tickets.id, changed));
+        after(() => notifyAssigned(refs, [op.agentId], agent));
+      }
     }
     label = op.add ? `Assigned to ${target.name}` : `Unassigned ${target.name}`;
   } else if (op.kind === "clearAssignees") {
@@ -632,6 +744,7 @@ export async function addNote(
   });
   await db.update(tickets).set({ updatedAt: now }).where(eq(tickets.id, ticketId));
 
+  after(() => notifyMentions(ticket, body, agent));
   refresh(ticket.number);
   return { ok: "Note added" };
 }

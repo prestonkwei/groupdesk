@@ -6,7 +6,12 @@ import { Lock, Reply, Send, StickyNote } from "lucide-react";
 import { addNote, replyToTicket, type ActionState } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/shortcuts";
-import { RichEditor, type RichValue, type TemplateOption } from "@/components/rich-editor";
+import {
+  RichEditor,
+  type MentionOption,
+  type RichValue,
+  type TemplateOption,
+} from "@/components/rich-editor";
 import { firstNameOf, recipientVars } from "@/lib/template-vars";
 import { RecipientField, type Contact } from "@/components/recipient-field";
 import { useHotkeys } from "@/lib/hotkeys";
@@ -46,6 +51,7 @@ export function Composer({
   templates,
   ticketNumber,
   ticketSubject,
+  agents,
 }: {
   ticketId: string;
   /** Exactly what the reply's Subject will be, e.g. "[TICKET: #1058] …". */
@@ -59,6 +65,7 @@ export function Composer({
   templates: TemplateOption[];
   ticketNumber: number;
   ticketSubject: string;
+  agents: MentionOption[];
 }) {
   const [mode, setMode] = useState<Mode>("reply");
   const [open, setOpen] = useState(false);
@@ -225,9 +232,11 @@ export function Composer({
             placeholder={
               mode === "reply"
                 ? "Write your reply… (type / for templates)"
-                : "Note for the team — not emailed to anyone"
+                : "Note for the team — type @ to mention someone"
             }
             templates={templates}
+            // "@" suggests teammates in internal notes (they get an email).
+            mentions={mode === "note" ? agents : undefined}
             variables={() => {
               // Variables describe the first To recipient.
               const email = to[0] ?? "";

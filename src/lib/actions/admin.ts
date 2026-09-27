@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
+import { agentTeams, agents, blockedSenders, tags, teams, gmailSync } from "@/db/schema";
 import { requireAdmin, requireGmailOwner } from "@/lib/auth";
 import { slugify } from "@/lib/utils";
 import { isTagColor } from "@/lib/tag-colors";
@@ -239,4 +239,17 @@ export async function sendDigestToEveryone(): Promise<ActionState> {
   return failed.length
     ? { error: `Sent to ${results.length - failed.length}; failed for ${failed.map((f) => f.email).join(", ")}` }
     : { ok: `Sent to all ${results.length} agents` };
+}
+
+/* ------------------------------------------------------------------ spam */
+
+export async function unblockSender(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const email = String(form.get("id") ?? "").toLowerCase();
+  await db.delete(blockedSenders).where(eq(blockedSenders.email, email));
+  revalidatePath("/admin/spam");
+  return { ok: `Unblocked ${email}` };
 }

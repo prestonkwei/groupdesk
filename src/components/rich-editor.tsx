@@ -23,7 +23,15 @@ export type { Editor };
 export type RichValue = { html: string; text: string; empty: boolean };
 export type TemplateOption = { id: string; name: string; bodyHtml: string };
 
-type SlashState = { query: string; from: number; top: number; left: number; index: number };
+type SlashState = {
+  kind: "template" | "mention";
+  query: string;
+  from: number;
+  top: number;
+  left: number;
+  index: number;
+};
+export type MentionOption = { id: string; name: string; email: string };
 
 /**
  * Small rich-text editor for replies: bold/italic/underline/strike, lists,
@@ -41,7 +49,10 @@ export function RichEditor({
   templates,
   variables,
   editorRef,
+  mentions,
 }: {
+  /** Enables "@" suggestions (internal notes): inserts "@Full Name". */
+  mentions?: MentionOption[];
   placeholder: string;
   /** Exposes the editor, e.g. for "insert variable" buttons. */
   editorRef?: React.MutableRefObject<Editor | null>;
@@ -63,36 +74,45 @@ export function RichEditor({
   const [slash, setSlash] = useState<SlashState | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   // The editor's handlers are created once, so they read live values via refs.
-  const live = useRef({ slash, matches: [] as TemplateOption[], templates, variables });
-  const matches = slash && templates ? matchTemplates(templates, slash.query) : [];
+  const matches =
+    slash?.kind === "template" && templates
+      ? matchTemplates(templates, slash.query)
+      : slash?.kind === "mention" && mentions
+        ? matchMentions(mentions, slash.query)
+        : [];
+  const live = useRef({ slash, matches: matches as (TemplateOption | MentionOption)[], templates, variables, mentions });
   useEffect(() => {
-    live.current = { slash, matches, templates, variables };
+    live.current = { slash, matches, templates, variables, mentions };
   });
 
-  function insertTemplate(editor: Editor, t: TemplateOption) {
+  function insertTemplate(editor: Editor, t: TemplateOption | MentionOption) {
     const s = live.current.slash;
     if (!s) return;
-    const html = fillTemplate(t.bodyHtml, live.current.variables?.() ?? {});
-    editor.chain().focus().deleteRange({ from: s.from, to: editor.state.selection.from }).insertContent(html).run();
+    const content =
+      "bodyHtml" in t ? fillTemplate(t.bodyHtml, live.current.variables?.() ?? {}) : `@${t.name} `;
+    editor.chain().focus().deleteRange({ from: s.from, to: editor.state.selection.from }).insertContent(content).run();
     setSlash(null);
   }
 
   /** Opens the menu while the caret sits right after "/word" at a word start. */
   function detectSlash(editor: Editor) {
-    if (!live.current.templates) return;
+    const { templates: tpl, mentions: people } = live.current;
+    if (!tpl && !people) return;
     const { $from, empty } = editor.state.selection;
     if (!empty) return setSlash(null);
     const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 40), $from.parentOffset, undefined, "\ufffc");
-    const m = before.match(/(?:^|\s)\/([\w-]{0,30})$/);
-    if (!m) return setSlash(null);
+    const m = before.match(/(?:^|\s)([/@])([\w.-]{0,30})$/);
+    const kind = m?.[1] === "@" ? "mention" : "template";
+    if (!m || (kind === "mention" ? !people : !tpl)) return setSlash(null);
     const coords = editor.view.coordsAtPos($from.pos);
     const box = boxRef.current?.getBoundingClientRect();
     setSlash((prev) => ({
-      query: m[1],
-      from: $from.pos - m[1].length - 1,
+      kind,
+      query: m[2],
+      from: $from.pos - m[2].length - 1,
       top: coords.bottom - (box?.top ?? 0) + 4,
       left: Math.max(0, coords.left - (box?.left ?? 0) - 8),
-      index: prev && prev.query === m[1] ? prev.index : 0,
+      index: prev && prev.query === m[2] && prev.kind === kind ? prev.index : 0,
     }));
   }
 
@@ -186,11 +206,34 @@ export function RichEditor({
           onMouseDown={(e) => e.preventDefault()}
         >
           <p className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-            Templates{slash.query ? ` matching “${slash.query}”` : ""}
+            {slash.kind === "mention" ? "Mention a teammate" : "Templates"}
+            {slash.query ? ` matching “${slash.query}”` : ""}
           </p>
-          {matches.length ? (
+          {slash.kind === "mention" ? (
+            matches.length ? (
+              <ul className="max-h-64 overflow-y-auto">
+                {(matches as MentionOption[]).map((a, i) => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onMouseEnter={() => setSlash({ ...slash, index: i })}
+                      onClick={() => insertTemplate(editor, a)}
+                      className={cn("block w-full rounded-md px-2 py-1.5 text-left", i === slash.index && "bg-[var(--accent)]")}
+                    >
+                      <span className="block truncate text-sm font-medium">{a.name}</span>
+                      <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                        Emails them a link to this note
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="px-2 py-2 text-xs text-[var(--muted-foreground)]">No teammate matches.</p>
+            )
+          ) : matches.length ? (
             <ul className="max-h-64 overflow-y-auto">
-              {matches.map((t, i) => (
+              {(matches as TemplateOption[]).map((t, i) => (
                 <li key={t.id}>
                   <button
                     type="button"
@@ -225,6 +268,14 @@ export function RichEditor({
 
 function plainText(html: string) {
   return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
+}
+
+function matchMentions(list: MentionOption[], query: string) {
+  const q = query.toLowerCase();
+  return list
+    .filter((a) => !q || a.name.toLowerCase().includes(q) || a.email.toLowerCase().startsWith(q))
+    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(q)) - Number(!b.name.toLowerCase().startsWith(q)))
+    .slice(0, 8);
 }
 
 /** Name matches first (prefix, then anywhere), then body text. */
