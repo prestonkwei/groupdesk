@@ -69,10 +69,13 @@ export async function gmailFor(email?: string): Promise<{
   return { client: gmail({ version: "v1", auth: client }), email: row.email };
 }
 
-/** Resolve (and cache on the sync row) the id of the label we watch. */
+/**
+ * Resolve the id of the label we watch. Callers persist it with their own
+ * gmail_sync update: writing it here, on a separate connection, deadlocked
+ * syncFromHistory, which already holds that row FOR UPDATE.
+ */
 export async function resolveLabelId(
   client: GmailClient,
-  email: string,
   cached?: string | null,
 ): Promise<string> {
   if (cached) return cached;
@@ -85,10 +88,6 @@ export async function resolveLabelId(
       `Gmail label "${env.labelName}" not found. Create the filter/label in Gmail first.`,
     );
   }
-  await db
-    .update(gmailSync)
-    .set({ labelId: label.id })
-    .where(eq(gmailSync.email, email));
   return label.id;
 }
 

@@ -56,7 +56,7 @@ export async function syncFromHistory(options?: {
       const row = (locked.rows ?? [])[0];
       if (!row) throw new Error(`gmail_sync row for ${email} disappeared`);
 
-      const labelId = await resolveLabelId(client, email, row.label_id);
+      const labelId = await resolveLabelId(client, row.label_id);
       const startHistoryId = row.last_history_id;
 
       const result = startHistoryId
@@ -191,7 +191,7 @@ export async function startWatch(email?: string): Promise<WatchResult> {
     .where(eq(gmailSync.email, mailbox))
     .limit(1);
 
-  const labelId = await resolveLabelId(client, mailbox, row?.labelId);
+  const labelId = await resolveLabelId(client, row?.labelId);
 
   const { data } = await client.users.watch({
     userId: "me",
