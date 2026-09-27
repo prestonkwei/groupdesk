@@ -85,7 +85,7 @@ export function Composer({
   useHotkeys({ r: () => start("reply"), n: () => start("note") });
 
   return (
-    <div className="border-t border-[var(--border)] bg-[var(--background)] px-6 py-3">
+    <div className="border-t border-[var(--border)] bg-[var(--background)] px-3 py-3 sm:px-6">
       {!open && (
         <div className="mx-auto w-full max-w-3xl">
           <div className="flex items-center gap-2">

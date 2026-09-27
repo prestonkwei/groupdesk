@@ -17,6 +17,8 @@ import {
   type TicketStatus,
 } from "@/db/schema";
 import { requireAgent } from "@/lib/auth";
+import { listTickets, type TicketFilters } from "@/lib/queries";
+import { photosFor } from "@/lib/people";
 import { sendReply } from "@/lib/gmail/send";
 
 export type ActionState = { ok?: string; error?: string };
@@ -230,6 +232,19 @@ export async function toggleStar(ticketId: string): Promise<ActionState> {
 
   refresh(ticket.number);
   return { ok: removed.length ? "Unstarred" : "Starred" };
+}
+
+/* ------------------------------------------------------------- paging */
+
+/** The next page of the ticket list, with photos for its people. */
+export async function loadMoreTickets(filters: TicketFilters, offset: number) {
+  const { agent } = await requireAgent();
+  const rows = await listTickets(filters, agent, { offset });
+  const photos = await photosFor([
+    ...rows.map((r) => r.requesterEmail),
+    ...rows.flatMap((r) => r.assignees.map((a) => a.email)),
+  ]);
+  return { rows, photos };
 }
 
 /* ------------------------------------------------------------------ bulk */

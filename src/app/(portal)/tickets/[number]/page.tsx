@@ -19,6 +19,7 @@ import { env } from "@/lib/env";
 import { Thread } from "@/components/thread";
 import { Composer } from "@/components/composer";
 import {
+  MobileDetails,
   StarButton,
   TicketHotkeys,
   TicketProperties,
@@ -111,9 +112,9 @@ export default async function TicketPage({
       <LiveRefresh intervalMs={5000} />
       <TicketHotkeys newer={nav.newer} older={nav.older} />
 
-      <div className="flex h-[calc(100vh-3rem)]">
+      <div className="flex h-[calc(100dvh-3rem)]">
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2.5">
+          <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-2 sm:px-4 sm:py-2.5">
             <Link
               href="/tickets"
               className="rounded-md p-1.5 text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
@@ -139,8 +140,16 @@ export default async function TicketPage({
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl px-6 pt-6">
-              <h1 className="text-xl font-semibold leading-snug tracking-tight">
+            <MobileDetails>
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Requester:{" "}
+                <a href={`mailto:${ticket.requesterEmail}`} className="hover:underline">
+                  {ticket.requesterEmail}
+                </a>
+              </p>
+            </MobileDetails>
+            <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-6 sm:pt-6">
+              <h1 className="text-lg font-semibold leading-snug tracking-tight sm:text-xl">
                 {ticket.subject}
               </h1>
               <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-[var(--muted-foreground)]">

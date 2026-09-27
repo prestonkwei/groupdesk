@@ -4,7 +4,7 @@ import { desc, eq, isNotNull, and } from "drizzle-orm";
 import { db } from "@/db";
 import { messages, tickets, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
-import { taggedSubject } from "@/lib/ticket-subject";
+import { taggedSubject, ticketNumberFromSubject } from "@/lib/ticket-subject";
 import { gmailFor } from "./client";
 
 export type SentReply = {
@@ -38,17 +38,33 @@ export async function sendReply(args: {
     .limit(1);
   if (!ticket) throw new Error("Ticket not found");
 
-  // Latest message that actually has a Message-ID, for threading headers.
-  const [last] = await db
+  /*
+   * Gmail titles a conversation after its first message, so a reply threaded
+   * onto the requester's original email keeps their untagged subject on
+   * screen. Instead, the first reply starts a fresh conversation titled
+   * "[TICKET: #n] …", and later replies thread onto the latest message in that
+   * tagged conversation. Replies to it come back with the tag (and our
+   * Message-IDs in References), so ingest still files them on this ticket.
+   */
+  const candidates = await db
     .select()
     .from(messages)
-    .where(
-      and(eq(messages.ticketId, ticket.id), isNotNull(messages.rfcMessageId)),
-    )
+    .where(and(eq(messages.ticketId, ticket.id), isNotNull(messages.rfcMessageId)))
     .orderBy(desc(messages.sentAt))
-    .limit(1);
+    .limit(50);
+  const last =
+    candidates.find((m) => ticketNumberFromSubject(m.subject) === ticket.number) ?? null;
 
   const { client } = await gmailFor();
+
+  // Keep our own mailbox's copy in the same tagged conversation too.
+  let threadId: string | undefined;
+  if (last?.gmailMessageId) {
+    const { data } = await client.users.messages
+      .get({ userId: "me", id: last.gmailMessageId, format: "minimal" })
+      .catch(() => ({ data: { threadId: undefined as string | null | undefined } }));
+    threadId = data.threadId ?? undefined;
+  }
 
   const subject = taggedSubject(ticket.number, ticket.subject);
 
@@ -91,7 +107,7 @@ export async function sendReply(args: {
     userId: "me",
     requestBody: {
       raw,
-      threadId: ticket.gmailThreadId ?? undefined,
+      threadId,
     },
   });
 

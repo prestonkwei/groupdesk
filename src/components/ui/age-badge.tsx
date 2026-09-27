@@ -28,11 +28,14 @@ export function AgeBadge({
   resolved,
   showDate = true,
   className,
+  dateClassName,
 }: {
   since: Date | string;
   resolved: boolean;
   showDate?: boolean;
   className?: string;
+  /** e.g. "hidden sm:inline" to drop the date on phones and keep the pill. */
+  dateClassName?: string;
 }) {
   return (
     <span
@@ -40,7 +43,9 @@ export function AgeBadge({
       title={`Came in ${dateTime(since)}`}
     >
       {showDate && (
-        <span className="whitespace-nowrap text-[var(--muted-foreground)]">{shortDate(since)}</span>
+        <span className={cn("whitespace-nowrap text-[var(--muted-foreground)]", dateClassName)}>
+          {shortDate(since)}
+        </span>
       )}
       <span
         className={cn(

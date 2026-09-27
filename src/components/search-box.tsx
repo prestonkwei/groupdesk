@@ -66,7 +66,7 @@ export function SearchBox({ autoFocus = false }: { autoFocus?: boolean }) {
           <X className="size-3.5" />
         </button>
       ) : (
-        <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border)] px-1 text-[10px] text-[var(--muted-foreground)]">
+        <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 rounded border sm:block border-[var(--border)] px-1 text-[10px] text-[var(--muted-foreground)]">
           /
         </kbd>
       )}

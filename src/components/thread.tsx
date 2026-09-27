@@ -103,7 +103,7 @@ export function Thread({
   const collapsedCount = messageIds.filter((id) => !expanded.has(id)).length;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 py-6">
+    <div className="mx-auto w-full max-w-3xl px-3 py-4 sm:px-6 sm:py-6">
       {collapsedCount > 1 && (
         <div className="mb-3 flex justify-end">
           <button
@@ -179,7 +179,7 @@ function MessageCard({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex w-full items-start gap-3 px-4 py-3 text-left"
+        className="flex w-full items-start gap-3 px-3 py-3 text-left sm:px-4"
       >
         <Avatar name={m.fromName} email={m.fromEmail} photo={photo} size="md" />
         <div className="min-w-0 flex-1">
@@ -219,7 +219,7 @@ function MessageCard({
       </button>
 
       {open && (
-        <div className="px-4 pb-4 pl-[60px]">
+        <div className="px-3 pb-4 sm:px-4 sm:pl-[60px]">
           {m.bodyHtml ? (
             <HtmlBody html={m.bodyHtml} />
           ) : (

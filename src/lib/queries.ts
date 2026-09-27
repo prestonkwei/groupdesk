@@ -110,8 +110,17 @@ function filterClauses(f: TicketFilters, me: Agent): SQL[] {
   return where;
 }
 
-export async function listTickets(f: TicketFilters, me: Agent) {
+export const PAGE_SIZE = 50;
+
+/** One page of tickets; `offset` counts rows already shown. */
+export async function listTickets(
+  f: TicketFilters,
+  me: Agent,
+  page: { offset?: number; limit?: number } = {},
+) {
   const where = filterClauses(f, me);
+  const limit = Math.min(page.limit ?? PAGE_SIZE, 200);
+  const offset = Math.max(page.offset ?? 0, 0);
 
   const rows = await db
     .select({
@@ -141,8 +150,11 @@ export async function listTickets(f: TicketFilters, me: Agent) {
     .orderBy(
       ...(f.q?.trim() ? [desc(searchScore(f.q.trim()))] : []),
       desc(tickets.lastMessageAt),
+      // Tie-break so pages never overlap or skip when timestamps match.
+      desc(tickets.id),
     )
-    .limit(200);
+    .limit(limit)
+    .offset(offset);
 
   const ids = rows.map((r) => r.id);
   const tagRows = ids.length
@@ -203,6 +215,17 @@ async function assigneesFor(ticketIds: string[]) {
 export async function ticketAssigneeIds(ticketId: string) {
   const map = await assigneesFor([ticketId]);
   return (map.get(ticketId) ?? []).map((a) => a.id);
+}
+
+/** How many tickets match, for the header count and "load more". */
+export async function countTickets(f: TicketFilters, me: Agent) {
+  const where = filterClauses(f, me);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tickets)
+    .leftJoin(teams, eq(teams.id, tickets.teamId))
+    .where(where.length ? and(...where) : undefined);
+  return row?.n ?? 0;
 }
 
 export type TicketListItem = Awaited<ReturnType<typeof listTickets>>[number];

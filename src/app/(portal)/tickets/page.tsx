@@ -4,6 +4,7 @@ import {
   listAgents,
   listTags,
   listTeams,
+  countTickets,
   listTickets,
   type TicketFilters,
   type TicketView,
@@ -43,8 +44,9 @@ export default async function TicketsPage({
     q: one("q"),
   };
 
-  const [rows, agentList, teamList, tagList] = await Promise.all([
+  const [rows, total, agentList, teamList, tagList] = await Promise.all([
     listTickets(filters, agent),
+    countTickets(filters, agent),
     listAgents(true),
     listTeams(),
     listTags(),
@@ -61,16 +63,15 @@ export default async function TicketsPage({
       : (VIEW_TITLES[filters.view ?? "unsolved"] ?? "Tickets");
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
+    <div className="flex h-[calc(100dvh-3rem)] flex-col">
       <LiveRefresh />
 
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-5">
-        <h1 className="text-sm font-semibold">{title}</h1>
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-3 sm:px-5">
+        <h1 className="shrink-0 text-sm font-semibold">{title}</h1>
         <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
-          {rows.length}
-          {rows.length === 200 ? "+" : ""}
+          {total.toLocaleString()}
         </span>
-        <div className="ml-auto w-72">
+        <div className="ml-auto w-full min-w-0 max-w-72">
           <Suspense fallback={null}>
             <SearchBox autoFocus={one("focus") === "search"} />
           </Suspense>
@@ -78,8 +79,12 @@ export default async function TicketsPage({
       </div>
 
       <TicketList
+        // A new view or search starts again from page one.
+        key={JSON.stringify(filters)}
         rows={rows}
         photos={photos}
+        total={total}
+        filters={filters}
         me={{ id: agent.id, name: agent.name, email: agent.email }}
         agents={agentList.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
         teams={teamList.map((t) => ({ id: t.id, name: t.name }))}

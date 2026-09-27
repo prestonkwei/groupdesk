@@ -4,10 +4,16 @@ import { forwardRef, useEffect, useOptimistic, useRef, useState, useTransition }
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Star, Tag as TagIcon, UserRound, Users, X } from "lucide-react";
-import type { TicketListItem } from "@/lib/queries";
+import type { TicketFilters, TicketListItem } from "@/lib/queries";
 import type { PhotoMap } from "@/lib/people";
 import type { TicketPriority, TicketStatus } from "@/db/schema";
-import { assignToMe, bulkUpdate, toggleStar, type BulkOp } from "@/lib/actions/tickets";
+import {
+  assignToMe,
+  bulkUpdate,
+  loadMoreTickets,
+  toggleStar,
+  type BulkOp,
+} from "@/lib/actions/tickets";
 import { useHotkeys } from "@/lib/hotkeys";
 import { Avatar } from "@/components/ui/avatar";
 import { TagBadge } from "@/components/ui/badge";
@@ -27,8 +33,10 @@ type Option = { id: string; name: string };
 type BulkPicker = "status" | "priority" | "assignee" | "team" | "tags";
 
 export function TicketList({
-  rows,
-  photos,
+  rows: firstPage,
+  photos: firstPhotos,
+  total,
+  filters,
   me,
   agents,
   teams,
@@ -36,12 +44,58 @@ export function TicketList({
 }: {
   rows: TicketListItem[];
   photos: PhotoMap;
+  /** How many tickets match overall; more pages load as you scroll. */
+  total: number;
+  filters: TicketFilters;
   me: { id: string; name: string; email: string };
   agents: AgentOption[];
   teams: Option[];
   tags: (Option & { color: string })[];
 }) {
   const router = useRouter();
+
+  /* ------------------------------------------------------------- paging */
+
+  // The server renders the first page (and keeps it fresh via LiveRefresh);
+  // later pages are fetched on demand and appended here.
+  const [extra, setExtra] = useState<{ rows: TicketListItem[]; photos: PhotoMap }>({
+    rows: [],
+    photos: {},
+  });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const seen = new Set<string>();
+  const rows = [...firstPage, ...extra.rows].filter((r) =>
+    seen.has(r.id) ? false : (seen.add(r.id), true),
+  );
+  const photos = { ...extra.photos, ...firstPhotos };
+  const hasMore = rows.length < total;
+  const sentinel = useRef<HTMLLIElement>(null);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const next = await loadMoreTickets(filters, rows.length);
+      setExtra((prev) => ({
+        rows: [...prev.rows, ...next.rows],
+        photos: { ...prev.photos, ...next.photos },
+      }));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el || !hasMore) return;
+    const io = new IntersectionObserver(
+      (entries) => entries.some((e) => e.isIntersecting) && loadMore(),
+      { rootMargin: "400px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  });
+
   const [cursor, setCursor] = useState(-1);
   const [, start] = useTransition();
   const [starred, flipStar] = useOptimistic(
@@ -135,7 +189,10 @@ export function TicketList({
   const current = rows[cursor];
   const bulk = selected.size > 0;
   useHotkeys({
-    j: () => setCursor((c) => Math.min(c + 1, rows.length - 1)),
+    j: () => {
+      if (cursor >= rows.length - 5) void loadMore();
+      setCursor((c) => Math.min(c + 1, rows.length - 1));
+    },
     k: () => setCursor((c) => Math.max(c - 1, 0)),
     ArrowDown: () => setCursor((c) => Math.min(c + 1, rows.length - 1)),
     ArrowUp: () => setCursor((c) => Math.max(c - 1, 0)),
@@ -221,7 +278,7 @@ export function TicketList({
         </span>
         {selected.size > 0 && !allSelected && (
           <button type="button" onClick={toggleAll} className="hover:text-[var(--foreground)] hover:underline">
-            Select all {rows.length}
+            Select all {rows.length}{hasMore ? " loaded" : ""}
           </button>
         )}
         <span className="ml-auto hidden items-center gap-1 sm:flex">
@@ -243,7 +300,7 @@ export function TicketList({
             <li key={t.id} data-row={i}>
               <div
                 className={cn(
-                  "group relative flex h-12 items-center gap-3 border-b border-[var(--border)] pl-3 pr-4 text-sm",
+                  "group relative flex min-h-14 items-center gap-2.5 border-b border-[var(--border)] py-2 pl-3 pr-3 text-sm sm:h-12 sm:min-h-0 sm:gap-3 sm:py-0 sm:pr-4",
                   isSelected
                     ? "bg-[var(--primary)]/[0.07]"
                     : i === cursor
@@ -264,7 +321,7 @@ export function TicketList({
                   type="button"
                   onClick={() => star(t.id)}
                   className={cn(
-                    "relative z-10 -ml-1 rounded p-1 text-[var(--muted-foreground)] hover:text-amber-500",
+                    "relative z-10 -ml-1 hidden rounded p-1 text-[var(--muted-foreground)] hover:text-amber-500 sm:block",
                     !isStarred && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                   )}
                   aria-pressed={isStarred}
@@ -279,7 +336,7 @@ export function TicketList({
                 >
                   <PriorityIcon priority={t.priority} />
                 </span>
-                <span className="w-12 shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
+                <span className="hidden w-12 shrink-0 text-xs tabular-nums text-[var(--muted-foreground)] sm:inline">
                   #{t.number}
                 </span>
                 <span title={t.status} className="shrink-0">
@@ -303,15 +360,23 @@ export function TicketList({
                     email={t.requesterEmail}
                     photo={photos[t.requesterEmail.toLowerCase()]}
                     size="xs"
+                    className="hidden sm:grid"
                   />
-                  <span className="w-36 shrink-0 truncate text-[var(--muted-foreground)]">
+                  <span className="hidden w-36 shrink-0 truncate text-[var(--muted-foreground)] sm:block">
                     {t.requesterName || t.requesterEmail}
                   </span>
-                  <span className={cn("truncate", unsolved ? "font-medium" : "text-[var(--muted-foreground)]")}>
-                    {t.subject}
+                  {/* Phones: subject over a "requester · #n" line. */}
+                  <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2">
+                    <span className={cn("truncate", unsolved ? "font-medium" : "text-[var(--muted-foreground)]")}>
+                      {t.subject}
+                    </span>
+                    <span className="truncate text-xs text-[var(--muted-foreground)] sm:hidden">
+                      {t.requesterName || t.requesterEmail} · #{t.number}
+                      {t.messageCount > 1 ? ` · ${t.messageCount} messages` : ""}
+                    </span>
                   </span>
                   {t.messageCount > 1 && (
-                    <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                    <span className="hidden shrink-0 text-xs text-[var(--muted-foreground)] sm:inline">
                       {t.messageCount}
                     </span>
                   )}
@@ -332,7 +397,7 @@ export function TicketList({
                 </div>
 
                 <span
-                  className="flex w-14 shrink-0 justify-end"
+                  className="hidden w-14 shrink-0 justify-end sm:flex"
                   title={assigned.length ? `Assigned to ${assigned.map((a) => a.name).join(", ")}` : "Unassigned"}
                 >
                   {assigned.length ? (
@@ -355,12 +420,26 @@ export function TicketList({
                 <AgeBadge
                   since={t.createdAt}
                   resolved={!unsolved}
-                  className="w-[136px] justify-end"
+                  dateClassName="hidden sm:inline"
+                  className="justify-end sm:w-[136px]"
                 />
               </div>
             </li>
           );
         })}
+        {hasMore && (
+          <li ref={sentinel} className="flex h-14 items-center justify-center text-xs text-[var(--muted-foreground)]">
+            {loadingMore ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="size-3.5 animate-spin" /> Loading more…
+              </span>
+            ) : (
+              <button type="button" onClick={loadMore} className="hover:underline">
+                Showing {rows.length} of {total} · load more
+              </button>
+            )}
+          </li>
+        )}
       </ul>
 
       {bulk && (

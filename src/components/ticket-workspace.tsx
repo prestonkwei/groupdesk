@@ -419,3 +419,60 @@ export function TicketHotkeys({
 
   return null;
 }
+
+/* ---------------------------------------------------------- mobile panel */
+
+/**
+ * Phones have no room for the right-hand panel, so the same properties sit in
+ * a collapsible strip above the conversation, summarised when closed.
+ */
+export function MobileDetails({ children }: { children?: React.ReactNode }) {
+  const { state, agents } = useTicket();
+  const [open, setOpen] = useState(false);
+  const status = STATUSES.find((s) => s.value === state.status)!;
+  const assignees = state.assigneeIds
+    .map((id) => agents.find((a) => a.id === id))
+    .filter((a): a is AgentOption => !!a);
+
+  return (
+    <div className="border-b border-[var(--border)] md:hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm"
+      >
+        <span className="flex items-center gap-1.5">
+          <StatusIcon status={status.value} />
+          {status.label}
+        </span>
+        <PriorityIcon priority={state.priority} />
+        {assignees.length > 0 ? (
+          <span className="flex -space-x-1.5">
+            {assignees.slice(0, 3).map((a) => (
+              <Avatar
+                key={a.id}
+                name={a.name}
+                email={a.email}
+                photo={a.photo}
+                size="xs"
+                className="ring-2 ring-[var(--background)]"
+              />
+            ))}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--muted-foreground)]">Unassigned</span>
+        )}
+        <span className="ml-auto text-xs text-[var(--muted-foreground)]">
+          {open ? "Hide details" : "Details"}
+        </span>
+      </button>
+      {open && (
+        <div className="space-y-4 px-4 pb-4">
+          <TicketProperties />
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
