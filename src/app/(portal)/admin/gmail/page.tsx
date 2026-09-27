@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireGmailOwner } from "@/lib/auth";
 import { getSyncRow } from "@/lib/gmail/client";
 import { disconnectGmail, renewWatch, runSyncNow } from "@/lib/actions/admin";
 import {
@@ -36,7 +36,7 @@ export default async function GmailAdminPage({
 }: {
   searchParams: Promise<{ ok?: string; error?: string }>;
 }) {
-  await requireAdmin();
+  await requireGmailOwner();
   const sp = await searchParams;
   const row = await getSyncRow();
 

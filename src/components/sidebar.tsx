@@ -35,11 +35,13 @@ export function Sidebar({
   teams,
   tags,
   isAdmin,
+  canManageGmail,
 }: {
   counts: Counts;
   teams: { name: string; slug: string }[];
   tags: { name: string; slug: string }[];
   isAdmin: boolean;
+  canManageGmail: boolean;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -121,7 +123,7 @@ export function Sidebar({
           <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             Admin
           </p>
-          {ADMIN.map((a) => {
+          {ADMIN.filter((a) => a.href !== "/admin/gmail" || canManageGmail).map((a) => {
             const Icon = a.icon;
             return (
               <Link

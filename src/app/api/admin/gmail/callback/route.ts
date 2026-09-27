@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { gmailSync } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
+import { requireGmailOwner } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { encryptSecret } from "@/lib/crypto";
 import { oauthClient } from "@/lib/gmail/client";
 import { gmail } from "@googleapis/gmail";
@@ -18,7 +19,7 @@ function back(message: string, ok = false) {
 }
 
 export async function GET(req: Request) {
-  await requireAdmin();
+  await requireGmailOwner();
 
   const url = new URL(req.url);
   const error = url.searchParams.get("error");
@@ -50,7 +51,11 @@ export async function GET(req: Request) {
 
   if (!profile.emailAddress) back("Could not read the mailbox address");
 
-  const email = profile.emailAddress!;
+  const email = profile.emailAddress!.toLowerCase();
+  if (email !== env.gmailMailbox) {
+    await client.revokeToken(tokens.refresh_token!).catch(() => {});
+    back(`Signed in as ${email}. Connect with ${env.gmailMailbox} instead.`);
+  }
 
   await db
     .insert(gmailSync)

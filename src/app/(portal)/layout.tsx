@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { requireAgent } from "@/lib/auth";
+import { canManageGmail, requireAgent } from "@/lib/auth";
 import { listTags, listTeams, viewCounts } from "@/lib/queries";
 import { Sidebar } from "@/components/sidebar";
 import { initials } from "@/lib/utils";
@@ -38,6 +38,7 @@ export default async function PortalLayout({
             teams={teams.map((t) => ({ name: t.name, slug: t.slug }))}
             tags={tags.map((t) => ({ name: t.name, slug: t.slug }))}
             isAdmin={agent.role === "admin"}
+            canManageGmail={canManageGmail(agent)}
           />
         </Suspense>
         <main className="min-w-0 flex-1">{children}</main>

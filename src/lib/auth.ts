@@ -55,6 +55,19 @@ export async function requireAgent(): Promise<Session> {
   return session;
 }
 
+/** The Gmail connection belongs to one person: the owner of GMAIL_MAILBOX. */
+export function canManageGmail(agent: Agent): boolean {
+  return agent.role === "admin" && agent.email.toLowerCase() === env.gmailMailbox;
+}
+
+export async function requireGmailOwner(): Promise<Session> {
+  const session = await requireAgent();
+  if (!canManageGmail(session.agent)) {
+    throw new Error(`Only ${env.gmailMailbox} can manage the Gmail connection.`);
+  }
+  return session;
+}
+
 export async function requireAdmin(): Promise<Session> {
   const session = await requireAgent();
   if (session.agent.role !== "admin") {

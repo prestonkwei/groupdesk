@@ -23,15 +23,20 @@ export function consentUrl(state: string) {
   return oauthClient().generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
+    login_hint: env.gmailMailbox,
     scope: GMAIL_SCOPES,
     include_granted_scopes: true,
     state,
   });
 }
 
-/** The single connected mailbox row, or null if nobody has connected yet. */
+/** The GMAIL_MAILBOX sync row, or null if it hasn't been connected yet. */
 export async function getSyncRow() {
-  const [row] = await db.select().from(gmailSync).limit(1);
+  const [row] = await db
+    .select()
+    .from(gmailSync)
+    .where(eq(gmailSync.email, env.gmailMailbox))
+    .limit(1);
   return row ?? null;
 }
 

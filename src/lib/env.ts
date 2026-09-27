@@ -10,7 +10,11 @@ function opt(name: string, fallback = ""): string {
 
 export const env = {
   get appUrl() {
-    return opt("APP_URL", "http://localhost:3000").replace(/\/$/, "");
+    // Vercel sets VERCEL_PROJECT_PRODUCTION_URL (host only) on every deploy, so
+    // a missing APP_URL no longer sends OAuth back to localhost in production.
+    const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    const fallback = vercel ? `https://${vercel}` : "http://localhost:3000";
+    return opt("APP_URL", fallback).replace(/\/$/, "");
   },
 
   // Google OAuth
@@ -41,6 +45,10 @@ export const env = {
   // Gmail
   get labelName() {
     return opt("GMAIL_LABEL_NAME", "helpdesk");
+  },
+  /** The one mailbox the app ingests from; only this person may manage it. */
+  get gmailMailbox() {
+    return opt("GMAIL_MAILBOX", "admin@example.org").toLowerCase();
   },
   get groupEmail() {
     return req("GROUP_EMAIL");

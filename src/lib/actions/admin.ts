@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireGmailOwner } from "@/lib/auth";
 import { slugify } from "@/lib/utils";
 import { startWatch } from "@/lib/gmail/sync";
 import type { ActionState } from "./tickets";
@@ -139,7 +139,7 @@ export async function deleteTag(
 /* ----------------------------------------------------------------- gmail */
 
 export async function renewWatch(): Promise<ActionState> {
-  await requireAdmin();
+  await requireGmailOwner();
   try {
     const { expiration } = await startWatch();
     revalidatePath("/admin/gmail");
@@ -150,7 +150,7 @@ export async function renewWatch(): Promise<ActionState> {
 }
 
 export async function runSyncNow(): Promise<ActionState> {
-  await requireAdmin();
+  await requireGmailOwner();
   const { syncFromHistory } = await import("@/lib/gmail/sync");
   try {
     const s = await syncFromHistory();
@@ -168,7 +168,7 @@ export async function disconnectGmail(
   _prev: ActionState,
   form: FormData,
 ): Promise<ActionState> {
-  await requireAdmin();
+  await requireGmailOwner();
   await db.delete(gmailSync).where(eq(gmailSync.email, String(form.get("email"))));
   revalidatePath("/admin/gmail");
   return { ok: "Disconnected. Connect again to resume ingestion." };
