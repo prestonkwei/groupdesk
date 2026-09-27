@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import Link from "next/link";
+import { PenSquare } from "lucide-react";
 import { requireAgent } from "@/lib/auth";
 import {
   listAgents,
@@ -71,6 +73,13 @@ export default async function TicketsPage({
         <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
           {total.toLocaleString()}
         </span>
+        <Link
+          href="/tickets/new"
+          className="grid size-8 shrink-0 place-items-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)] md:hidden"
+          aria-label="New message"
+        >
+          <PenSquare className="size-4" />
+        </Link>
         <div className="ml-auto w-full min-w-0 max-w-72">
           <Suspense fallback={null}>
             <SearchBox autoFocus={one("focus") === "search"} />

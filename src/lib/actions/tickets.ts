@@ -488,6 +488,71 @@ function addresses(raw: FormDataEntryValue | null): string[] {
   return [...out];
 }
 
+/* ------------------------------------------------------------- outbound */
+
+/**
+ * Start a ticket by emailing someone first. The ticket exists before the send
+ * so its number can go in the subject ("[TICKET: #n] …"); if the send fails
+ * the ticket is removed again rather than left empty.
+ */
+export async function startTicket(input: {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  bodyText: string;
+  bodyHtml: string | null;
+  assignToMe: boolean;
+}): Promise<ActionState & { number?: number }> {
+  const { agent } = await requireAgent();
+  const subject = input.subject.trim();
+  const bodyText = input.bodyText.trim();
+  if (!subject) return { error: "Add a subject" };
+  if (!bodyText) return { error: "Write something first" };
+
+  let to: string[], cc: string[], bcc: string[];
+  try {
+    to = addresses(JSON.stringify(input.to));
+    cc = addresses(JSON.stringify(input.cc));
+    bcc = addresses(JSON.stringify(input.bcc));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  if (!to.length) return { error: "Add at least one recipient" };
+
+  // Name the requester if we've heard from them before.
+  const [known] = await db
+    .select({ name: tickets.requesterName })
+    .from(tickets)
+    .where(and(eq(tickets.requesterEmail, to[0]), sql`${tickets.requesterName} is not null`))
+    .limit(1);
+
+  const [ticket] = await db
+    .insert(tickets)
+    .values({ subject, requesterEmail: to[0], requesterName: known?.name ?? null, status: "open" })
+    .returning();
+
+  try {
+    await sendReply({ ticketId: ticket.id, agent, to, cc, bcc, bodyText, bodyHtml: input.bodyHtml });
+  } catch (err) {
+    await db.delete(tickets).where(eq(tickets.id, ticket.id));
+    return { error: `Send failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  await db.insert(events).values({
+    ticketId: ticket.id,
+    actorAgentId: agent.id,
+    kind: "created",
+    data: { via: "portal", by: agent.name },
+  });
+  if (input.assignToMe) {
+    await db.insert(ticketAssignees).values({ ticketId: ticket.id, agentId: agent.id }).onConflictDoNothing();
+  }
+
+  revalidatePath("/tickets");
+  return { ok: `Sent #${ticket.number}`, number: ticket.number };
+}
+
 /* ------------------------------------------------------------------ note */
 
 export async function addNote(

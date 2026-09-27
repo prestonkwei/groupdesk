@@ -373,3 +373,16 @@ export async function ticketTagIds(ticketId: string) {
 export async function agentTeamRows() {
   return db.select().from(agentTeams);
 }
+
+/** People who've written in recently, for To/Cc suggestions when composing. */
+export async function recentRequesters(limit = 300) {
+  return db
+    .select({
+      email: tickets.requesterEmail,
+      name: sql<string | null>`max(${tickets.requesterName})`,
+    })
+    .from(tickets)
+    .groupBy(tickets.requesterEmail)
+    .orderBy(desc(sql`max(${tickets.lastMessageAt})`))
+    .limit(limit);
+}
