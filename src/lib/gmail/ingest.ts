@@ -467,6 +467,28 @@ async function findOrCreateTicketRaw(
 
 /* ----------------------------------------------------------- attachments */
 
+/**
+ * Vercel Blob stores are either private or public, and each only accepts its
+ * own kind of upload. Try private first (attachments can be sensitive), fall
+ * back to public, and remember which one worked.
+ */
+let blobAccess: "private" | "public" | null = null;
+
+async function putAttachment(path: string, body: Buffer, contentType: string) {
+  const order: ("private" | "public")[] = blobAccess ? [blobAccess] : ["private", "public"];
+  let lastError: unknown;
+  for (const access of order) {
+    try {
+      const blob = await put(path, body, { access, addRandomSuffix: true, contentType });
+      blobAccess = access;
+      return blob;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
 async function storeAttachments(messageId: string, parsed: Email) {
   const list = parsed.attachments ?? [];
   if (!list.length) return;
@@ -480,11 +502,11 @@ async function storeAttachments(messageId: string, parsed: Email) {
           ? Buffer.from(att.content)
           : Buffer.from(att.content as unknown as string, "utf8");
 
-      const blob = await put(`messages/${messageId}/${filename}`, body, {
-        access: "public",
-        addRandomSuffix: true,
-        contentType: att.mimeType || "application/octet-stream",
-      });
+      const blob = await putAttachment(
+        `messages/${messageId}/${filename}`,
+        body,
+        att.mimeType || "application/octet-stream",
+      );
 
       await db.insert(attachments).values({
         messageId,

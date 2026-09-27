@@ -244,7 +244,7 @@ function MessageCard({
               {m.attachments.map((a) => (
                 <li key={a.id}>
                   <a
-                    href={a.blobUrl}
+                    href={`/api/attachments/${a.id}`}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex max-w-64 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs hover:bg-[var(--accent)]"
