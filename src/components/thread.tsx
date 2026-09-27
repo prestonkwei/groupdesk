@@ -1,127 +1,258 @@
-import { Paperclip } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { Lock, Paperclip } from "lucide-react";
 import type { ThreadEvent, ThreadMessage } from "@/lib/queries";
-import { HtmlBody, TextBody } from "./message-body";
-import { cn, initials, relativeTime } from "@/lib/utils";
+import type { PhotoMap } from "@/lib/people";
+import { HtmlBody, TextBody, splitQuote } from "./message-body";
+import { Avatar } from "@/components/ui/avatar";
+import { cn, relativeTime } from "@/lib/utils";
 
 type Item =
   | { kind: "message"; at: Date; message: ThreadMessage }
-  | { kind: "event"; at: Date; event: ThreadEvent };
+  | { kind: "events"; at: Date; events: ThreadEvent[] };
 
 function describe(e: ThreadEvent): string {
   const who = e.actorName ?? "Someone";
   const d = e.data as Record<string, string | undefined>;
   switch (e.kind) {
     case "created":
-      return `Ticket created from email from ${d.from ?? "the requester"}`;
+      return "opened this ticket by email";
     case "reopened":
-      return `Reopened by a new reply from ${d.by ?? "the requester"}`;
+      return `reopened by a new reply from ${d.by ?? "the requester"}`;
     case "assigned":
-      return `${who} assigned this to ${d.assigneeName ?? "someone"}`;
+      return `${who} assigned ${d.assigneeName ?? "someone"}`;
     case "unassigned":
-      return `${who} unassigned this`;
+      return d.assigneeName ? `${who} unassigned ${d.assigneeName}` : `${who} unassigned`;
     case "status":
-      return `${who} changed status from ${d.from} to ${d.to}`;
+      return `${who} set status to ${d.to}`;
+    case "priority":
+      return `${who} set priority to ${d.to}`;
     case "team":
-      return d.teamName ? `${who} moved this to ${d.teamName}` : `${who} cleared the team`;
+      return d.teamName ? `${who} moved to ${d.teamName}` : `${who} cleared the team`;
     case "tag_added":
-      return `${who} added the tag ${d.tagName}`;
+      return `${who} added ${d.tagName}`;
     case "tag_removed":
-      return `${who} removed the tag ${d.tagName}`;
+      return `${who} removed ${d.tagName}`;
     default:
       return `${who} · ${e.kind}`;
   }
 }
 
+/** One-line preview of a collapsed message, without the quoted history. */
+function snippet(m: ThreadMessage) {
+  const text = m.bodyHtml
+    ? m.bodyHtml
+        .split(/<(?:div|blockquote)[^>]*class="[^"]*gmail_quote|<blockquote[^>]*type="cite"/i)[0]
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/&quot;/g, '"')
+    : splitQuote(m.bodyText ?? "")[0];
+  return text.replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function fullDate(d: Date) {
+  return new Date(d).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function Thread({
   messages,
   events,
+  photos,
 }: {
   messages: ThreadMessage[];
   events: ThreadEvent[];
+  photos: PhotoMap;
 }) {
-  const items: Item[] = [
+  // "created" just restates the first message, so it isn't shown.
+  const visibleEvents = events.filter((e) => e.kind !== "created");
+
+  const sorted = [
     ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
-    ...events.map((e) => ({ kind: "event" as const, at: e.createdAt, event: e })),
-  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+    ...visibleEvents.map((e) => ({ kind: "event" as const, at: e.createdAt, event: e })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+  // Runs of activity collapse into one quiet line between messages.
+  const items: Item[] = [];
+  for (const it of sorted) {
+    if (it.kind === "message") items.push(it);
+    else {
+      const last = items[items.length - 1];
+      if (last?.kind === "events") last.events.push(it.event);
+      else items.push({ kind: "events", at: it.at, events: [it.event] });
+    }
+  }
+
+  const messageIds = messages.map((m) => m.id);
+  const lastId = messageIds[messageIds.length - 1];
+  // Long threads start with only the first and latest messages open.
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () =>
+      new Set(messages.length <= 3 ? messageIds : [messageIds[0], lastId].filter(Boolean)),
+  );
+
+  function toggle(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const collapsedCount = messageIds.filter((id) => !expanded.has(id)).length;
 
   return (
-    <div className="flex flex-col gap-4 p-5">
-      {items.map((item) =>
-        item.kind === "event" ? (
-          <p
-            key={`e-${item.event.id}`}
-            className="px-1 text-xs text-[var(--muted-foreground)]"
+    <div className="mx-auto w-full max-w-3xl px-6 py-6">
+      {collapsedCount > 1 && (
+        <div className="mb-3 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setExpanded(new Set(messageIds))}
+            className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
           >
-            {describe(item.event)} · {relativeTime(item.at)}
-          </p>
-        ) : (
-          <MessageCard key={`m-${item.message.id}`} message={item.message} />
-        ),
+            Expand all
+          </button>
+        </div>
       )}
+
+      <ol className="flex flex-col">
+        {items.map((item) =>
+          item.kind === "events" ? (
+            <li
+              key={`e-${item.events[0].id}`}
+              className="flex gap-3 py-2 pl-[11px] text-xs text-[var(--muted-foreground)]"
+            >
+              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-[var(--border)]" />
+              <span className="min-w-0">
+                {item.events.map((e, i) => (
+                  <span key={e.id}>
+                    {i > 0 && " · "}
+                    {describe(e)}
+                  </span>
+                ))}
+                <span className="ml-1.5 opacity-70">{relativeTime(item.at)}</span>
+              </span>
+            </li>
+          ) : (
+            <li key={`m-${item.message.id}`} className="py-1.5">
+              <MessageCard
+                message={item.message}
+                photo={photos[(item.message.authorEmail ?? item.message.fromEmail).toLowerCase()]}
+                open={expanded.has(item.message.id)}
+                onToggle={() => toggle(item.message.id)}
+              />
+            </li>
+          ),
+        )}
+      </ol>
     </div>
   );
 }
 
-function MessageCard({ message: m }: { message: ThreadMessage }) {
+function MessageCard({
+  message: m,
+  photo,
+  open,
+  onToggle,
+}: {
+  message: ThreadMessage;
+  photo: string | null | undefined;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const isNote = m.direction === "note";
   const isOutbound = m.direction === "outbound";
+  const name = m.fromName || m.fromEmail;
 
   return (
     <article
       className={cn(
-        "rounded-lg border p-4",
+        "rounded-xl border transition-colors",
         isNote
-          ? "border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
-          : isOutbound
-            ? "border-[var(--border)] bg-[var(--muted)]"
-            : "border-[var(--border)] bg-[var(--card)]",
+          ? "border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/30"
+          : "border-[var(--border)] bg-[var(--card)]",
+        !open && "hover:bg-[var(--muted)]",
       )}
     >
-      <header className="mb-3 flex items-center gap-2 text-xs">
-        <span className="grid size-6 place-items-center rounded-full bg-[var(--accent)] text-[10px] font-semibold text-[var(--accent-foreground)]">
-          {initials(m.fromName || m.fromEmail)}
-        </span>
-        <span className="font-medium">{m.fromName || m.fromEmail}</span>
-        {m.fromName && (
-          <span className="text-[var(--muted-foreground)]">{m.fromEmail}</span>
-        )}
-        {isNote && (
-          <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
-            Internal note
-          </span>
-        )}
-        {isOutbound && !isNote && (
-          <span className="rounded-full border border-[var(--border)] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-            Reply
-          </span>
-        )}
-        <time className="ml-auto text-[var(--muted-foreground)]">
-          {new Date(m.sentAt).toLocaleString()}
-        </time>
-      </header>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-start gap-3 px-4 py-3 text-left"
+      >
+        <Avatar name={m.fromName} email={m.fromEmail} photo={photo} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate text-sm font-semibold">{name}</span>
+            {open && m.fromName && (
+              <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:inline">
+                {m.fromEmail}
+              </span>
+            )}
+            {isNote && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-200/70 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+                <Lock className="size-2.5" />
+                Internal
+              </span>
+            )}
+            {isOutbound && (
+              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                Sent from portal
+              </span>
+            )}
+            <time
+              className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]"
+              title={fullDate(m.sentAt)}
+              dateTime={new Date(m.sentAt).toISOString()}
+            >
+              {open ? fullDate(m.sentAt) : relativeTime(m.sentAt)}
+            </time>
+          </div>
+          {!open && (
+            <p className="mt-0.5 truncate text-sm text-[var(--muted-foreground)]">
+              {m.attachments.length > 0 && <Paperclip className="mr-1 inline size-3" />}
+              {snippet(m) || "(empty message)"}
+            </p>
+          )}
+        </div>
+      </button>
 
-      {m.bodyHtml ? (
-        <HtmlBody html={m.bodyHtml} />
-      ) : (
-        <TextBody text={m.bodyText ?? "(empty message)"} />
-      )}
+      {open && (
+        <div className="px-4 pb-4 pl-[60px]">
+          {m.bodyHtml ? (
+            <HtmlBody html={m.bodyHtml} />
+          ) : (
+            <TextBody text={m.bodyText ?? "(empty message)"} />
+          )}
 
-      {m.attachments.length > 0 && (
-        <ul className="mt-3 flex flex-wrap gap-2">
-          {m.attachments.map((a) => (
-            <li key={a.id}>
-              <a
-                href={a.blobUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] px-2 py-1 text-xs hover:bg-[var(--accent)]"
-              >
-                <Paperclip className="size-3" />
-                {a.filename}
-              </a>
-            </li>
-          ))}
-        </ul>
+          {m.attachments.length > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {m.attachments.map((a) => (
+                <li key={a.id}>
+                  <a
+                    href={a.blobUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex max-w-64 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-xs hover:bg-[var(--accent)]"
+                  >
+                    <Paperclip className="size-3 shrink-0" />
+                    <span className="truncate">{a.filename}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
     </article>
   );

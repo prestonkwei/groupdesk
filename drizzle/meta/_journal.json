@@ -8,6 +8,13 @@
       "when": 1790124440917,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790534340806,
+      "tag": "0001_ticket_ui_upgrade",
+      "breakpoints": true
     }
   ]
 }

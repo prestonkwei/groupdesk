@@ -108,6 +108,22 @@ The watch is scoped to this label (`labelFilterBehavior: 'include'`), so nothing
 else in the mailbox produces a push. `GMAIL_LABEL_NAME` must match the label
 name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
 
+## Replies, photos and search
+
+- **Sender.** Replies go out as `Agent Name <help@example.org>` with the
+  subject `[TICKET: #1234] Original subject`. Gmail only honours that From if
+  the group address is a verified alias: in the connected mailbox, Gmail
+  Settings → Accounts → "Send mail as". `/admin/gmail` shows whether it is.
+  Until then Gmail sends from the mailbox itself.
+- **Threading.** Incoming mail whose subject carries `[TICKET: #1234]` joins that
+  ticket even without In-Reply-To/References.
+- **Profile photos** come from the Google Workspace directory (People API,
+  `directory.readonly`). Enable the People API in the Cloud project and
+  reconnect Gmail once so the new scope is granted. Photos are cached in
+  `people` for a week; anyone outside the directory gets initials.
+- **Search** is fuzzy (`pg_trgm`, enabled by migration 0001): typo-tolerant on
+  subject and requester, plus exact text in message bodies and `#1234`.
+
 ## Deploying
 
 1. Create the Vercel project and a Neon database, then set every variable from

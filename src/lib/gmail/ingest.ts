@@ -6,6 +6,7 @@ import { db, type Tx } from "@/db";
 import { agents, attachments, events, messages, tickets } from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
+import { stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
 
 export type IngestResult =
   | { status: "skipped"; reason: string }
@@ -87,7 +88,9 @@ function normaliseSubject(subject: string | undefined): string {
 }
 
 function stripReplyPrefix(subject: string) {
-  return subject.replace(/^((re|fwd?|aw|sv)\s*(\[\d+\])?:\s*)+/i, "").trim();
+  return stripTicketTag(
+    subject.replace(/^((re|fwd?|aw|sv)\s*(\[\d+\])?:\s*)+/i, "").trim(),
+  );
 }
 
 /* ----------------------------------------------------------------- ingest */
@@ -284,7 +287,18 @@ async function findOrCreateTicket(
     }
   }
 
-  // 2. Gmail's own threadId.
+  // 2. The [TICKET: #1234] tag our replies put in the subject.
+  const tagged = ticketNumberFromSubject(args.subject);
+  if (tagged) {
+    const [t] = await tx
+      .select()
+      .from(tickets)
+      .where(eq(tickets.number, tagged))
+      .limit(1);
+    if (t) return t;
+  }
+
+  // 3. Gmail's own threadId.
   if (args.gmailThreadId) {
     const [t] = await tx
       .select()
@@ -294,7 +308,7 @@ async function findOrCreateTicket(
     if (t) return t;
   }
 
-  // 3. New ticket.
+  // 4. New ticket.
   const [created] = await tx
     .insert(tickets)
     .values({

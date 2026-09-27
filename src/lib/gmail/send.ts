@@ -4,6 +4,7 @@ import { desc, eq, isNotNull, and } from "drizzle-orm";
 import { db } from "@/db";
 import { messages, tickets, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
+import { taggedSubject } from "@/lib/ticket-subject";
 import { gmailFor } from "./client";
 
 export type SentReply = {
@@ -21,8 +22,15 @@ export type SentReply = {
 export async function sendReply(args: {
   ticketId: string;
   agent: Agent;
+  to: string[];
+  cc: string[];
+  bcc: string[];
   bodyText: string;
+  /** Rich-text body from the composer; plain text is always sent alongside. */
+  bodyHtml: string | null;
 }): Promise<SentReply> {
+  if (!args.to.length) throw new Error("Add at least one recipient");
+
   const [ticket] = await db
     .select()
     .from(tickets)
@@ -40,16 +48,20 @@ export async function sendReply(args: {
     .orderBy(desc(messages.sentAt))
     .limit(1);
 
-  const { client, email: mailbox } = await gmailFor();
+  const { client } = await gmailFor();
 
-  const subject = ticket.subject.match(/^re:/i)
-    ? ticket.subject
-    : `Re: ${ticket.subject}`;
+  const subject = taggedSubject(ticket.number, ticket.subject);
+
+  // Replies come from the team address with the agent's name on it. Gmail only
+  // honours this From when the group address is a verified "Send mail as"
+  // alias of the connected mailbox; otherwise it falls back to the mailbox.
+  const from = env.groupEmail;
 
   const msg = createMimeMessage();
-  msg.setSender({ name: args.agent.name, addr: mailbox });
-  msg.setRecipient(ticket.requesterEmail);
-  msg.setCc(env.groupEmail);
+  msg.setSender({ name: args.agent.name, addr: from });
+  msg.setTo(args.to);
+  if (args.cc.length) msg.setCc(args.cc);
+  if (args.bcc.length) msg.setBcc(args.bcc);
   msg.setSubject(subject);
 
   const references = [
@@ -65,7 +77,13 @@ export async function sendReply(args: {
   }
 
   const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\nhelpdesk\n`;
-  msg.addMessage({ contentType: "text/plain", data: body });
+  msg.addMessage({ contentType: "text/plain", encoding: "base64", data: base64Lines(body) });
+
+  const html = args.bodyHtml
+    ? `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2328">${cleanHtml(args.bodyHtml)}` +
+      `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>helpdesk</p></div>`
+    : null;
+  if (html) msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
 
   const raw = Buffer.from(msg.asRaw()).toString("base64url");
 
@@ -102,13 +120,14 @@ export async function sendReply(args: {
       rfcMessageId,
       inReplyTo: last?.rfcMessageId ?? null,
       references,
-      fromEmail: mailbox,
+      fromEmail: from,
       fromName: args.agent.name,
-      toEmails: [ticket.requesterEmail],
-      ccEmails: [env.groupEmail],
+      toEmails: args.to,
+      ccEmails: args.cc,
+      bccEmails: args.bcc,
       subject,
       bodyText: body,
-      bodyHtml: null,
+      bodyHtml: html,
       authorAgentId: args.agent.id,
       sentAt: now,
     })
@@ -125,4 +144,25 @@ export async function sendReply(args: {
     .where(eq(tickets.id, ticket.id));
 
   return { gmailMessageId: sent.id, rfcMessageId, messageRowId: row.id };
+}
+
+/** Base64 in 76-character lines, so non-ASCII text and long HTML lines survive transit. */
+function base64Lines(s: string) {
+  return (Buffer.from(s, "utf8").toString("base64").match(/.{1,76}/g) ?? []).join("\r\n");
+}
+
+function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
+/**
+ * The composer only produces simple formatting, but the action accepts any
+ * string, so drop anything active before it goes out or into the database.
+ */
+function cleanHtml(html: string) {
+  return html
+    .replace(/<(script|style|iframe|object|embed|form)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(script|style|iframe|object|embed|form|link|meta)[^>]*>/gi, "")
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*/gi, "$1=$2#");
 }

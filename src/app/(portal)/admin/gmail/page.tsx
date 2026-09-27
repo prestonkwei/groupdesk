@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { requireGmailOwner } from "@/lib/auth";
-import { getSyncRow } from "@/lib/gmail/client";
+import { getSyncRow, sendAsStatus } from "@/lib/gmail/client";
 import {
   disconnectGmail,
   renewWatch,
@@ -47,6 +47,7 @@ export default async function GmailAdminPage({
   await requireGmailOwner();
   const sp = await searchParams;
   const row = await getSyncRow();
+  const sendAs = row ? await sendAsStatus(env.groupEmail) : null;
 
   const now = await nowMs();
   const expiresIn = row?.watchExpiration
@@ -113,6 +114,20 @@ export default async function GmailAdminPage({
             <Row label="Label id" value={row?.labelId ?? "not resolved yet"} />
             <Row label="Pub/Sub topic" value={process.env.GMAIL_PUBSUB_TOPIC ?? "—"} />
             <Row label="Push endpoint" value={`${env.appUrl}/api/gmail/push`} />
+            {sendAs && (
+              <Row
+                label="Replies sent as"
+                value={
+                  sendAs === "verified"
+                    ? `Agent Name <${env.groupEmail}> ✓`
+                    : sendAs === "pending"
+                      ? `${env.groupEmail} is awaiting verification in Gmail — replies use ${row?.email} until then`
+                      : sendAs === "missing"
+                        ? `${row?.email} — add ${env.groupEmail} under Gmail Settings → Accounts → "Send mail as"`
+                        : "Couldn't check (reconnect Gmail)"
+                }
+              />
+            )}
           </dl>
 
           <div className="flex flex-wrap items-center gap-2 border-t border-[var(--border)] pt-4">
@@ -188,7 +203,7 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
         {label}
       </dt>
-      <dd className="break-all">{value}</dd>
+      <dd className="break-words">{value}</dd>
     </>
   );
 }

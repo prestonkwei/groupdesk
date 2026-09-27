@@ -9,6 +9,8 @@ import { env } from "@/lib/env";
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
+  // Workspace directory profile photos for avatars (src/lib/people.ts).
+  "https://www.googleapis.com/auth/directory.readonly",
 ];
 
 export function oauthClient() {
@@ -43,14 +45,10 @@ export async function getSyncRow() {
 export type GmailClient = gmail_v1.Gmail;
 
 /**
- * Gmail client authorised as the connected mailbox. Throws a clear error when
- * nothing is connected or the refresh token has been revoked — the /admin/gmail
- * page surfaces that as "reconnect".
+ * OAuth client authorised as the connected mailbox. Throws a clear error when
+ * nothing is connected — the /admin/gmail page surfaces that as "reconnect".
  */
-export async function gmailFor(email?: string): Promise<{
-  client: GmailClient;
-  email: string;
-}> {
+export async function googleAuthFor(email?: string) {
   const row = email
     ? ((await db
         .select()
@@ -66,7 +64,16 @@ export async function gmailFor(email?: string): Promise<{
     refresh_token: decryptSecret(row.refreshTokenEnc),
   });
 
-  return { client: gmail({ version: "v1", auth: client }), email: row.email };
+  return { auth: client, email: row.email };
+}
+
+/** Gmail client authorised as the connected mailbox. */
+export async function gmailFor(email?: string): Promise<{
+  client: GmailClient;
+  email: string;
+}> {
+  const { auth: client, email: mailbox } = await googleAuthFor(email);
+  return { client: gmail({ version: "v1", auth: client }), email: mailbox };
 }
 
 /**
@@ -96,4 +103,25 @@ export async function recordError(email: string, message: string | null) {
     .update(gmailSync)
     .set({ lastError: message })
     .where(eq(gmailSync.email, email));
+}
+
+export type SendAsStatus = "verified" | "pending" | "missing" | "unknown";
+
+/**
+ * Whether the connected mailbox may send as `address`. Replies set
+ * From: "Agent <group address>", which Gmail only honours for a verified
+ * "Send mail as" alias; otherwise it silently uses the mailbox itself.
+ */
+export async function sendAsStatus(address: string): Promise<SendAsStatus> {
+  try {
+    const { client } = await gmailFor();
+    const { data } = await client.users.settings.sendAs.list({ userId: "me" });
+    const match = (data.sendAs ?? []).find(
+      (s) => s.sendAsEmail?.toLowerCase() === address.toLowerCase(),
+    );
+    if (!match) return "missing";
+    return match.isPrimary || match.verificationStatus === "accepted" ? "verified" : "pending";
+  } catch {
+    return "unknown";
+  }
 }

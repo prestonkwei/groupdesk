@@ -3,7 +3,9 @@ import Link from "next/link";
 import { canManageGmail, requireAgent } from "@/lib/auth";
 import { listTags, listTeams, viewCounts } from "@/lib/queries";
 import { Sidebar } from "@/components/sidebar";
-import { initials } from "@/lib/utils";
+import { photosFor } from "@/lib/people";
+import { Avatar } from "@/components/ui/avatar";
+import { GlobalShortcuts } from "@/components/shortcuts";
 
 export default async function PortalLayout({
   children,
@@ -11,10 +13,11 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const { agent } = await requireAgent();
-  const [counts, teams, tags] = await Promise.all([
+  const [counts, teams, tags, photos] = await Promise.all([
     viewCounts(agent),
     listTeams(),
     listTags(),
+    photosFor([agent.email]),
   ]);
 
   return (
@@ -23,10 +26,16 @@ export default async function PortalLayout({
         <Link href="/tickets" className="text-sm font-semibold tracking-tight">
           Tickets
         </Link>
-        <div className="ml-auto flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-          <span>{agent.name}</span>
-          <span className="grid size-6 place-items-center rounded-full bg-[var(--accent)] text-[10px] font-semibold text-[var(--accent-foreground)]">
-            {initials(agent.name)}
+        <div className="ml-auto flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
+          <GlobalShortcuts />
+          <span className="flex items-center gap-2">
+            <span className="hidden sm:inline">{agent.name}</span>
+            <Avatar
+              name={agent.name}
+              email={agent.email}
+              photo={photos[agent.email.toLowerCase()]}
+              size="sm"
+            />
           </span>
         </div>
       </header>

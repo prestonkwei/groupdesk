@@ -11,15 +11,23 @@ import {
   Tags,
   Mail,
   UserCog,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Counts = { all: number; unsolved: number; unassigned: number; mine: number };
+type Counts = {
+  all: number;
+  unsolved: number;
+  unassigned: number;
+  mine: number;
+  starred: number;
+};
 
 const VIEWS = [
   { key: "unsolved", label: "Unsolved", icon: CircleDot },
   { key: "unassigned", label: "Unassigned", icon: Inbox },
   { key: "mine", label: "Assigned to me", icon: User },
+  { key: "starred", label: "Starred", icon: Star },
   { key: "all", label: "All tickets", icon: InboxIcon },
 ] as const;
 

@@ -27,6 +27,9 @@ export const messageDirection = pgEnum("message_direction", [
 
 export const agentRole = pgEnum("agent_role", ["agent", "admin"]);
 
+/** P0 is the most urgent; "none" means not triaged yet. */
+export const ticketPriority = pgEnum("ticket_priority", ["none", "p0", "p1", "p2", "p3"]);
+
 /* ------------------------------------------------------------------ people */
 
 export const agents = pgTable(
@@ -95,11 +98,9 @@ export const tickets = pgTable(
     number: integer("number").notNull().default(sql`nextval('ticket_number_seq')`),
     subject: text("subject").notNull().default("(no subject)"),
     status: ticketStatus("status").notNull().default("open"),
+    priority: ticketPriority("priority").notNull().default("none"),
     requesterEmail: text("requester_email").notNull(),
     requesterName: text("requester_name"),
-    assigneeId: uuid("assignee_id").references(() => agents.id, {
-      onDelete: "set null",
-    }),
     teamId: uuid("team_id").references(() => teams.id, { onDelete: "set null" }),
     gmailThreadId: text("gmail_thread_id"),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true })
@@ -118,6 +119,32 @@ export const tickets = pgTable(
     index("tickets_status_idx").on(t.status),
     index("tickets_updated_idx").on(t.updatedAt),
     index("tickets_last_message_idx").on(t.lastMessageAt),
+    // Fuzzy search (pg_trgm): typo-tolerant matching on subject and requester.
+    index("tickets_subject_trgm_idx").using("gin", t.subject.op("gin_trgm_ops")),
+    index("tickets_requester_trgm_idx").using(
+      "gin",
+      sql`(coalesce(${t.requesterName}, '') || ' ' || ${t.requesterEmail}) gin_trgm_ops`,
+    ),
+  ],
+);
+
+/** A ticket can have several assignees. */
+export const ticketAssignees = pgTable(
+  "ticket_assignees",
+  {
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ticket_assignees_key").on(t.ticketId, t.agentId),
+    index("ticket_assignees_agent_idx").on(t.agentId),
   ],
 );
 
@@ -132,6 +159,26 @@ export const ticketTags = pgTable(
       .references(() => tags.id, { onDelete: "cascade" }),
   },
   (t) => [uniqueIndex("ticket_tags_key").on(t.ticketId, t.tagId)],
+);
+
+/** Per-agent stars: each agent keeps their own starred list. */
+export const ticketStars = pgTable(
+  "ticket_stars",
+  {
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ticket_stars_key").on(t.agentId, t.ticketId),
+    index("ticket_stars_ticket_idx").on(t.ticketId),
+  ],
 );
 
 /* ---------------------------------------------------------------- messages */
@@ -154,6 +201,8 @@ export const messages = pgTable(
     fromName: text("from_name"),
     toEmails: jsonb("to_emails").$type<string[]>().notNull().default([]),
     ccEmails: jsonb("cc_emails").$type<string[]>().notNull().default([]),
+    /** Only ever set on replies sent from the portal; inbound mail has no Bcc. */
+    bccEmails: jsonb("bcc_emails").$type<string[]>().notNull().default([]),
     subject: text("subject"),
     bodyText: text("body_text"),
     bodyHtml: text("body_html"),
@@ -213,6 +262,22 @@ export const events = pgTable(
   (t) => [index("events_ticket_idx").on(t.ticketId, t.createdAt)],
 );
 
+/* ------------------------------------------------------------------ photos */
+
+/**
+ * Profile photos from the Google Workspace directory, keyed by lowercased
+ * email. `photoUrl` is null when the person has no custom photo or isn't in
+ * the directory; `fetchedAt` decides when to look again.
+ */
+export const people = pgTable("people", {
+  email: text("email").primaryKey(),
+  name: text("name"),
+  photoUrl: text("photo_url"),
+  fetchedAt: timestamp("fetched_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 /* -------------------------------------------------------------- gmail sync */
 
 /** Single-row table (one connected mailbox), but keyed by email so it can grow. */
@@ -233,10 +298,7 @@ export const gmailSync = pgTable("gmail_sync", {
 /* --------------------------------------------------------------- relations */
 
 export const ticketRelations = relations(tickets, ({ one, many }) => ({
-  assignee: one(agents, {
-    fields: [tickets.assigneeId],
-    references: [agents.id],
-  }),
+  assignees: many(ticketAssignees),
   team: one(teams, { fields: [tickets.teamId], references: [teams.id] }),
   messages: many(messages),
   ticketTags: many(ticketTags),
@@ -260,6 +322,14 @@ export const attachmentRelations = relations(attachments, ({ one }) => ({
     fields: [attachments.messageId],
     references: [messages.id],
   }),
+}));
+
+export const ticketAssigneeRelations = relations(ticketAssignees, ({ one }) => ({
+  ticket: one(tickets, {
+    fields: [ticketAssignees.ticketId],
+    references: [tickets.id],
+  }),
+  agent: one(agents, { fields: [ticketAssignees.agentId], references: [agents.id] }),
 }));
 
 export const ticketTagRelations = relations(ticketTags, ({ one }) => ({
@@ -294,3 +364,5 @@ export type Team = typeof teams.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type TicketEvent = typeof events.$inferSelect;
 export type GmailSync = typeof gmailSync.$inferSelect;
+export type TicketPriority = (typeof ticketPriority.enumValues)[number];
+export type TicketStatus = (typeof ticketStatus.enumValues)[number];

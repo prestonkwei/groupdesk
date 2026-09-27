@@ -3,7 +3,19 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { agents, events, messages, tags, teams, ticketTags, tickets } from "@/db/schema";
+import {
+  agents,
+  events,
+  messages,
+  tags,
+  teams,
+  ticketAssignees,
+  ticketStars,
+  ticketTags,
+  tickets,
+  type TicketPriority,
+  type TicketStatus,
+} from "@/db/schema";
 import { requireAgent } from "@/lib/auth";
 import { sendReply } from "@/lib/gmail/send";
 
@@ -24,49 +36,76 @@ async function touch(id: string) {
   await db.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, id));
 }
 
+/*
+ * Property changes take plain arguments rather than FormData so the pickers
+ * and keyboard shortcuts can call them directly.
+ */
+
 /* ---------------------------------------------------------------- assign */
 
-export async function assignTicket(
-  _prev: ActionState,
-  form: FormData,
+/** Adds or removes one assignee; a ticket can have several. */
+export async function toggleAssignee(
+  ticketId: string,
+  agentId: string,
+  mode: "toggle" | "add" = "toggle",
 ): Promise<ActionState> {
   const { agent } = await requireAgent();
-  const ticketId = String(form.get("ticketId"));
-  const raw = String(form.get("assigneeId") ?? "");
-  const assigneeId = raw && raw !== "none" ? raw : null;
-
   const ticket = await ticketOr404(ticketId);
-  if (ticket.assigneeId === assigneeId) return { ok: "No change" };
+  const [target] = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  if (!target) return { error: "Unknown agent" };
 
-  let name: string | null = null;
-  if (assigneeId) {
-    const [a] = await db.select().from(agents).where(eq(agents.id, assigneeId)).limit(1);
-    if (!a) return { error: "Unknown agent" };
-    name = a.name;
-  }
+  const where = and(eq(ticketAssignees.ticketId, ticketId), eq(ticketAssignees.agentId, agentId));
+  const [existing] = await db.select().from(ticketAssignees).where(where).limit(1);
+  if (existing && mode === "add") return { ok: `Already assigned to ${target.name}` };
 
-  await db.update(tickets).set({ assigneeId, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+  if (existing) await db.delete(ticketAssignees).where(where);
+  else await db.insert(ticketAssignees).values({ ticketId, agentId }).onConflictDoNothing();
+
+  await touch(ticketId);
   await db.insert(events).values({
     ticketId,
     actorAgentId: agent.id,
-    kind: assigneeId ? "assigned" : "unassigned",
-    data: { assigneeId, assigneeName: name },
+    kind: existing ? "unassigned" : "assigned",
+    data: { assigneeId: agentId, assigneeName: target.name },
   });
 
   refresh(ticket.number);
-  return { ok: assigneeId ? `Assigned to ${name}` : "Unassigned" };
+  return { ok: existing ? `Unassigned ${target.name}` : `Assigned to ${target.name}` };
+}
+
+export async function clearAssignees(ticketId: string): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const ticket = await ticketOr404(ticketId);
+  const removed = await db
+    .delete(ticketAssignees)
+    .where(eq(ticketAssignees.ticketId, ticketId))
+    .returning();
+  if (!removed.length) return { ok: "No change" };
+
+  await touch(ticketId);
+  await db.insert(events).values({
+    ticketId,
+    actorAgentId: agent.id,
+    kind: "unassigned",
+    data: { assigneeName: "everyone" },
+  });
+
+  refresh(ticket.number);
+  return { ok: "Unassigned" };
+}
+
+export async function assignToMe(ticketId: string): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  return toggleAssignee(ticketId, agent.id, "add");
 }
 
 /* ---------------------------------------------------------------- status */
 
 export async function setStatus(
-  _prev: ActionState,
-  form: FormData,
+  ticketId: string,
+  status: TicketStatus,
 ): Promise<ActionState> {
   const { agent } = await requireAgent();
-  const ticketId = String(form.get("ticketId"));
-  const status = String(form.get("status")) as (typeof tickets.status.enumValues)[number];
-
   if (!tickets.status.enumValues.includes(status)) return { error: "Unknown status" };
 
   const ticket = await ticketOr404(ticketId);
@@ -84,17 +123,37 @@ export async function setStatus(
   return { ok: `Status set to ${status}` };
 }
 
+/* -------------------------------------------------------------- priority */
+
+export async function setPriority(
+  ticketId: string,
+  priority: TicketPriority,
+): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  if (!tickets.priority.enumValues.includes(priority)) return { error: "Unknown priority" };
+
+  const ticket = await ticketOr404(ticketId);
+  if (ticket.priority === priority) return { ok: "No change" };
+
+  await db.update(tickets).set({ priority, updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+  await db.insert(events).values({
+    ticketId,
+    actorAgentId: agent.id,
+    kind: "priority",
+    data: { from: ticket.priority, to: priority },
+  });
+
+  refresh(ticket.number);
+  return { ok: `Priority set to ${priority}` };
+}
+
 /* ------------------------------------------------------------------ team */
 
 export async function setTeam(
-  _prev: ActionState,
-  form: FormData,
+  ticketId: string,
+  teamId: string | null,
 ): Promise<ActionState> {
   const { agent } = await requireAgent();
-  const ticketId = String(form.get("ticketId"));
-  const raw = String(form.get("teamId") ?? "");
-  const teamId = raw && raw !== "none" ? raw : null;
-
   const ticket = await ticketOr404(ticketId);
   if (ticket.teamId === teamId) return { ok: "No change" };
 
@@ -119,14 +178,8 @@ export async function setTeam(
 
 /* ------------------------------------------------------------------- tags */
 
-export async function toggleTag(
-  _prev: ActionState,
-  form: FormData,
-): Promise<ActionState> {
+export async function toggleTag(ticketId: string, tagId: string): Promise<ActionState> {
   const { agent } = await requireAgent();
-  const ticketId = String(form.get("ticketId"));
-  const tagId = String(form.get("tagId"));
-
   const ticket = await ticketOr404(ticketId);
   const [tag] = await db.select().from(tags).where(eq(tags.id, tagId)).limit(1);
   if (!tag) return { error: "Unknown tag" };
@@ -162,6 +215,23 @@ export async function toggleTag(
   return { ok: existing.length ? `Removed ${tag.name}` : `Added ${tag.name}` };
 }
 
+/* ------------------------------------------------------------------ star */
+
+/** Stars are per agent, so this doesn't touch the ticket or its activity log. */
+export async function toggleStar(ticketId: string): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const ticket = await ticketOr404(ticketId);
+  const where = and(eq(ticketStars.agentId, agent.id), eq(ticketStars.ticketId, ticketId));
+
+  const removed = await db.delete(ticketStars).where(where).returning();
+  if (!removed.length) {
+    await db.insert(ticketStars).values({ agentId: agent.id, ticketId }).onConflictDoNothing();
+  }
+
+  refresh(ticket.number);
+  return { ok: removed.length ? "Unstarred" : "Starred" };
+}
+
 /* ----------------------------------------------------------------- reply */
 
 export async function replyToTicket(
@@ -170,13 +240,24 @@ export async function replyToTicket(
 ): Promise<ActionState> {
   const { agent } = await requireAgent();
   const ticketId = String(form.get("ticketId"));
-  const body = String(form.get("body") ?? "").trim();
-  if (!body) return { error: "Write something first" };
+  const bodyText = String(form.get("body") ?? "").trim();
+  const bodyHtml = String(form.get("bodyHtml") ?? "").trim() || null;
+  if (!bodyText) return { error: "Write something first" };
+
+  let to: string[], cc: string[], bcc: string[];
+  try {
+    to = addresses(form.get("to"));
+    cc = addresses(form.get("cc"));
+    bcc = addresses(form.get("bcc"));
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
+  if (!to.length) return { error: "Add at least one recipient" };
 
   const ticket = await ticketOr404(ticketId);
 
   try {
-    await sendReply({ ticketId, agent, bodyText: body });
+    await sendReply({ ticketId, agent, to, cc, bcc, bodyText, bodyHtml });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { error: `Send failed: ${message}` };
@@ -184,6 +265,20 @@ export async function replyToTicket(
 
   refresh(ticket.number);
   return { ok: "Reply sent" };
+}
+
+/** A JSON array of addresses from the composer, validated and de-duplicated. */
+function addresses(raw: FormDataEntryValue | null): string[] {
+  if (!raw) return [];
+  const list = JSON.parse(String(raw)) as unknown;
+  if (!Array.isArray(list)) throw new Error("Bad recipient list");
+  const out = new Set<string>();
+  for (const v of list) {
+    const e = String(v).trim().toLowerCase();
+    if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(e)) throw new Error(`Not an email address: ${e}`);
+    out.add(e);
+  }
+  return [...out];
 }
 
 /* ------------------------------------------------------------------ note */
@@ -195,6 +290,7 @@ export async function addNote(
   const { agent } = await requireAgent();
   const ticketId = String(form.get("ticketId"));
   const body = String(form.get("body") ?? "").trim();
+  const bodyHtml = String(form.get("bodyHtml") ?? "").trim() || null;
   if (!body) return { error: "Write something first" };
 
   const ticket = await ticketOr404(ticketId);
@@ -206,6 +302,8 @@ export async function addNote(
     fromEmail: agent.email,
     fromName: agent.name,
     bodyText: body,
+    // Notes are only ever shown inside the sandboxed message frame.
+    bodyHtml,
     authorAgentId: agent.id,
     sentAt: now,
   });
