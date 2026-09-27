@@ -158,9 +158,10 @@ function render(agent: Agent, data: Awaited<ReturnType<typeof digestFor>>) {
 }
 
 /**
- * Email every active agent their weekly digest. Agents who got one in the
- * last 3 days are skipped (so a retried cron can't double-send) unless
- * `force`. `onlyAgentId` sends a single preview without marking it sent.
+ * Email every active agent their weekly digest. The scheduled run skips
+ * anyone who got one in the last 3 days, so a retried cron can't double-send.
+ * `force` (the admin buttons) ignores that and doesn't count as this week's
+ * digest, so Friday's still goes out. `onlyAgentId` sends to one person.
  */
 export async function sendWeeklyDigests(options: { force?: boolean; onlyAgentId?: string } = {}) {
   const recipients = await db
@@ -181,7 +182,7 @@ export async function sendWeeklyDigests(options: { force?: boolean; onlyAgentId?
     try {
       const { subject, html, text } = render(agent, await digestFor(agent));
       await sendNotice({ to: agent.email, subject, html, text });
-      if (!options.onlyAgentId) {
+      if (!options.force && !options.onlyAgentId) {
         await db.update(agents).set({ lastDigestAt: new Date() }).where(eq(agents.id, agent.id));
       }
       results.push({ email: agent.email, ok: true });

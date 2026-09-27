@@ -82,6 +82,35 @@ async function main() {
     ["reply subject is tagged once", taggedSubject(1058, "[TICKET: #1058] Copies"), "[TICKET: #1058] Copies"],
     ["replies to the digest are recognised", isDigestSubject("Re: [helpdesk digest] 4 open, 2 pending"), true],
     ["ordinary subjects are not digests", isDigestSubject("Digest of CC notes"), false],
+    [
+      "Gmail forward: requester is the original sender",
+      __test.forwardedSender(
+        { text: "FYI\n\n---------- Forwarded message ---------\nFrom: Jamie Rivera <JRivera@example.org>\nDate: Mon, Sep 21\nSubject: Projector\n" } as never,
+        "Fwd: Projector",
+      )?.email,
+      "jrivera@example.org",
+    ],
+    [
+      "Outlook forward with [mailto:]",
+      __test.forwardedSender(
+        { text: "See below\n________________________________\nFrom: Sam Okafor [mailto:sokafor@example.org]\nSent: Monday\n" } as never,
+        "FW: Canvas",
+      )?.email,
+      "sokafor@example.org",
+    ],
+    [
+      "Apple Mail forward from HTML",
+      __test.forwardedSender(
+        { html: "<div>Begin forwarded message:</div><div><b>From: </b>Ava Martin &lt;ava.martin@example.com&gt;</div>" } as never,
+        "Fwd: Chromebook",
+      )?.email,
+      "ava.martin@example.com",
+    ],
+    [
+      "ordinary email is not a forward",
+      __test.forwardedSender({ text: "Hi team, the printer is jammed." } as never, "Printer"),
+      null,
+    ],
     ["bare address parses", __test.parseAddress("a@b.co")?.email, "a@b.co"],
     ["non-address rejected", __test.parseAddress("not an address"), null],
   ];

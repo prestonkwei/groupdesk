@@ -20,6 +20,7 @@ import { photosFor } from "@/lib/people";
 import { env } from "@/lib/env";
 import { Thread } from "@/components/thread";
 import { RequesterHistory } from "@/components/requester-history";
+import { RequesterCard } from "@/components/requester-card";
 import { Composer } from "@/components/composer";
 import {
   MobileDetails,
@@ -73,6 +74,25 @@ export default async function TicketPage({
     group: env.groupEmail,
     mailbox: env.gmailMailbox,
   });
+
+  // People on this ticket's emails (not us), for "Change requester".
+  const ours = new Set([
+    env.groupEmail.toLowerCase(),
+    env.gmailMailbox.toLowerCase(),
+    ...agentList.map((a) => a.email.toLowerCase()),
+  ]);
+  const participantMap = new Map<string, { email: string; name: string | null; photo: string | null }>();
+  for (const m of thread.messages) {
+    if (m.direction === "note") continue;
+    for (const e of [m.fromEmail, ...m.toEmails, ...m.ccEmails]) {
+      const key = e.toLowerCase();
+      if (ours.has(key)) continue;
+      const name = key === m.fromEmail.toLowerCase() ? m.fromName : null;
+      const prev = participantMap.get(key);
+      if (!prev || (!prev.name && name)) participantMap.set(key, { email: key, name, photo: photo(key) });
+    }
+  }
+  const participants = [...participantMap.values()];
 
   // Everyone who has appeared on this ticket, plus the agents, for the
   // To/Cc/Bcc suggestions.
@@ -146,12 +166,17 @@ export default async function TicketPage({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <MobileDetails>
-              <p className="text-xs text-[var(--muted-foreground)]">
-                Requester:{" "}
-                <a href={`mailto:${ticket.requesterEmail}`} className="hover:underline">
-                  {ticket.requesterEmail}
-                </a>
-              </p>
+              <div>
+                <p className="mb-2 text-xs text-[var(--muted-foreground)]">Requester</p>
+                <RequesterCard
+                  compact
+                  ticketId={ticket.id}
+                  name={ticket.requesterName}
+                  email={ticket.requesterEmail}
+                  photo={photo(ticket.requesterEmail)}
+                  contacts={participants}
+                />
+              </div>
               <RequesterHistory email={ticket.requesterEmail} {...history} />
             </MobileDetails>
             <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-6 sm:pt-6">
@@ -182,6 +207,8 @@ export default async function TicketPage({
           </div>
 
           <Composer
+            // Changing the requester changes the default To, so start fresh.
+            key={ticket.requesterEmail}
             ticketId={ticket.id}
             subject={taggedSubject(ticket.number, ticket.subject)}
             fromName={agent.name}
@@ -203,23 +230,13 @@ export default async function TicketPage({
 
           <div className="p-4">
             <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Requester</p>
-            <div className="flex items-center gap-3">
-              <Avatar
-                name={ticket.requesterName}
-                email={ticket.requesterEmail}
-                photo={photo(ticket.requesterEmail)}
-                size="lg"
-              />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{requesterLabel}</p>
-                <a
-                  href={`mailto:${ticket.requesterEmail}`}
-                  className="block truncate text-xs text-[var(--muted-foreground)] hover:underline"
-                >
-                  {ticket.requesterEmail}
-                </a>
-              </div>
-            </div>
+            <RequesterCard
+              ticketId={ticket.id}
+              name={ticket.requesterName}
+              email={ticket.requesterEmail}
+              photo={photo(ticket.requesterEmail)}
+              contacts={participants}
+            />
 
             <dl className="mt-5 grid grid-cols-[76px_1fr] gap-x-2 gap-y-2 text-xs">
               <dt className="text-[var(--muted-foreground)]">Opened</dt>

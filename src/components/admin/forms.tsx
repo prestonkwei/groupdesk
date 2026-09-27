@@ -211,6 +211,32 @@ export function PlainActionButton({
   );
 }
 
+/** Like PlainActionButton, but asks first: for actions that email people. */
+export function ConfirmActionButton({
+  action,
+  label,
+  confirm,
+  variant = "outline",
+}: {
+  action: () => Promise<ActionState>;
+  label: string;
+  confirm: string;
+  variant?: "default" | "outline" | "ghost" | "destructive";
+}) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(
+    async (prev) => (window.confirm(confirm) ? action() : prev),
+    {},
+  );
+  return (
+    <form action={formAction} className="flex items-center gap-2">
+      <Button type="submit" size="sm" variant={variant} disabled={pending}>
+        {pending ? "Working…" : label}
+      </Button>
+      <Status state={state} />
+    </form>
+  );
+}
+
 export function DisconnectForm({
   action,
   email,

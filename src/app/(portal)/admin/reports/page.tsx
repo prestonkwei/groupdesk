@@ -2,8 +2,8 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { buildReport, RANGES, type Breakdown, type ReportRange } from "@/lib/reports";
 import { VolumeChart } from "@/components/volume-chart";
-import { PlainActionButton } from "@/components/admin/forms";
-import { previewDigest } from "@/lib/actions/admin";
+import { ConfirmActionButton, PlainActionButton } from "@/components/admin/forms";
+import { previewDigest, sendDigestToEveryone } from "@/lib/actions/admin";
 import { TagDot } from "@/components/ui/badge";
 import { cn, shortDate } from "@/lib/utils";
 
@@ -112,7 +112,14 @@ export default async function ReportsPage({
               week, their longest-open ticket and links to the rest.
             </p>
           </div>
-          <PlainActionButton action={previewDigest} label="Email me a preview" />
+          <div className="flex flex-wrap items-center gap-2">
+            <PlainActionButton action={previewDigest} label="Email me a test" />
+            <ConfirmActionButton
+              action={sendDigestToEveryone}
+              label="Send to everyone now"
+              confirm="Email every active agent their digest right now? Friday's regular digest still goes out."
+            />
+          </div>
         </section>
 
         <p className="pb-4 text-xs text-[var(--muted-foreground)]">

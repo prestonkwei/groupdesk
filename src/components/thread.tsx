@@ -33,6 +33,10 @@ function describe(e: ThreadEvent): string {
       return `${who} set priority to ${d.to}`;
     case "team":
       return d.teamName ? `${who} moved to ${d.teamName}` : `${who} cleared the team`;
+    case "requester":
+      return d.via === "forward"
+        ? `${who} forwarded this; requester set to ${d.toName ?? d.to}`
+        : `${who} changed the requester to ${d.toName ?? d.to}`;
     case "tag_added":
       return `${who} added ${d.tagName}`;
     case "tag_removed":

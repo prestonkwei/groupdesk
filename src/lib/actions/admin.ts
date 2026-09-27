@@ -219,11 +219,24 @@ export async function disconnectGmail(
 
 /* ---------------------------------------------------------------- digest */
 
-/** Send yourself this week's digest now, without marking it sent. */
+/** Send yourself this week's digest now (a test; Friday's still goes out). */
 export async function previewDigest(): Promise<ActionState> {
   const { agent } = await requireAdmin();
   const { sendWeeklyDigests } = await import("@/lib/digest");
   const [result] = await sendWeeklyDigests({ force: true, onlyAgentId: agent.id });
   if (!result) return { error: "Your agent record is inactive" };
   return result.ok ? { ok: `Sent to ${result.email}` } : { error: result.error };
+}
+
+/** Send every active agent their digest now, outside the Friday schedule. */
+export async function sendDigestToEveryone(): Promise<ActionState> {
+  await requireAdmin();
+  const { sendWeeklyDigests } = await import("@/lib/digest");
+  const results = await sendWeeklyDigests({ force: true });
+  const failed = results.filter((r) => !r.ok);
+  if (!results.length) return { error: "No active agents" };
+  if (failed.length === results.length) return { error: failed[0].error ?? "Send failed" };
+  return failed.length
+    ? { error: `Sent to ${results.length - failed.length}; failed for ${failed.map((f) => f.email).join(", ")}` }
+    : { ok: `Sent to all ${results.length} agents` };
 }

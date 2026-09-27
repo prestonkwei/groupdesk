@@ -217,6 +217,57 @@ export async function toggleTag(ticketId: string, tagId: string): Promise<Action
   return { ok: existing.length ? `Removed ${tag.name}` : `Added ${tag.name}` };
 }
 
+/* ------------------------------------------------------------- requester */
+
+/**
+ * Point the ticket at a different requester, e.g. when a forward (or an
+ * email sent on someone's behalf) made one of us the requester by mistake.
+ * Replies default to the requester, so this also changes who they go to.
+ */
+export async function setRequester(
+  ticketId: string,
+  input: { email: string; name?: string | null },
+): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const email = input.email.trim().toLowerCase();
+  if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email)) return { error: "Enter a valid email address" };
+
+  const ticket = await ticketOr404(ticketId);
+  if (ticket.requesterEmail.toLowerCase() === email && !input.name) return { ok: "No change" };
+
+  // Keep a known display name if none was given.
+  let name = input.name?.trim() || null;
+  if (!name) {
+    const [seen] = await db
+      .select({ name: messages.fromName })
+      .from(messages)
+      .where(and(sql`lower(${messages.fromEmail}) = ${email}`, sql`${messages.fromName} is not null`))
+      .limit(1);
+    const [asRequester] = seen
+      ? [null]
+      : await db
+          .select({ name: tickets.requesterName })
+          .from(tickets)
+          .where(and(sql`lower(${tickets.requesterEmail}) = ${email}`, sql`${tickets.requesterName} is not null`))
+          .limit(1);
+    name = seen?.name ?? asRequester?.name ?? null;
+  }
+
+  await db
+    .update(tickets)
+    .set({ requesterEmail: email, requesterName: name, updatedAt: new Date() })
+    .where(eq(tickets.id, ticketId));
+  await db.insert(events).values({
+    ticketId,
+    actorAgentId: agent.id,
+    kind: "requester",
+    data: { from: ticket.requesterEmail, to: email, toName: name },
+  });
+
+  refresh(ticket.number);
+  return { ok: `Requester is now ${name ?? email}` };
+}
+
 /* ------------------------------------------------------------------ star */
 
 /** Stars are per agent, so this doesn't touch the ticket or its activity log. */
