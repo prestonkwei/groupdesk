@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import {
   Bold,
+  FileText,
   Italic,
   Link as LinkIcon,
   List,
@@ -15,8 +17,13 @@ import {
   Underline,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fillTemplate, type TemplateVars } from "@/lib/template-vars";
 
+export type { Editor };
 export type RichValue = { html: string; text: string; empty: boolean };
+export type TemplateOption = { id: string; name: string; bodyHtml: string };
+
+type SlashState = { query: string; from: number; top: number; left: number; index: number };
 
 /**
  * Small rich-text editor for replies: bold/italic/underline/strike, lists,
@@ -30,8 +37,20 @@ export function RichEditor({
   autoFocusKey,
   resetKey,
   className,
+  initialHtml,
+  templates,
+  variables,
+  editorRef,
 }: {
   placeholder: string;
+  /** Exposes the editor, e.g. for "insert variable" buttons. */
+  editorRef?: React.MutableRefObject<Editor | null>;
+  /** Starting content, e.g. when editing a saved template. */
+  initialHtml?: string;
+  /** Enables the "/" menu: type / and a few letters to insert a template. */
+  templates?: TemplateOption[];
+  /** Values for {{variables}} in inserted templates, read at insert time. */
+  variables?: () => TemplateVars;
   onChange: (v: RichValue) => void;
   onSubmit: () => void;
   onEscape: () => void;
@@ -41,8 +60,45 @@ export function RichEditor({
   resetKey: number;
   className?: string;
 }) {
+  const [slash, setSlash] = useState<SlashState | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  // The editor's handlers are created once, so they read live values via refs.
+  const live = useRef({ slash, matches: [] as TemplateOption[], templates, variables });
+  const matches = slash && templates ? matchTemplates(templates, slash.query) : [];
+  useEffect(() => {
+    live.current = { slash, matches, templates, variables };
+  });
+
+  function insertTemplate(editor: Editor, t: TemplateOption) {
+    const s = live.current.slash;
+    if (!s) return;
+    const html = fillTemplate(t.bodyHtml, live.current.variables?.() ?? {});
+    editor.chain().focus().deleteRange({ from: s.from, to: editor.state.selection.from }).insertContent(html).run();
+    setSlash(null);
+  }
+
+  /** Opens the menu while the caret sits right after "/word" at a word start. */
+  function detectSlash(editor: Editor) {
+    if (!live.current.templates) return;
+    const { $from, empty } = editor.state.selection;
+    if (!empty) return setSlash(null);
+    const before = $from.parent.textBetween(Math.max(0, $from.parentOffset - 40), $from.parentOffset, undefined, "\ufffc");
+    const m = before.match(/(?:^|\s)\/([\w-]{0,30})$/);
+    if (!m) return setSlash(null);
+    const coords = editor.view.coordsAtPos($from.pos);
+    const box = boxRef.current?.getBoundingClientRect();
+    setSlash((prev) => ({
+      query: m[1],
+      from: $from.pos - m[1].length - 1,
+      top: coords.bottom - (box?.top ?? 0) + 4,
+      left: Math.max(0, coords.left - (box?.left ?? 0) - 8),
+      index: prev && prev.query === m[1] ? prev.index : 0,
+    }));
+  }
+
   const editor = useEditor({
     immediatelyRender: false,
+    content: initialHtml,
     extensions: [
       StarterKit.configure({
         heading: false,
@@ -58,6 +114,24 @@ export function RichEditor({
           "rich-editor min-h-28 max-h-[45vh] overflow-y-auto px-3 py-2.5 text-[15px] leading-relaxed outline-none",
       },
       handleKeyDown: (_view, event) => {
+        const { slash: s, matches: list } = live.current;
+        if (s && editor) {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            setSlash({ ...s, index: (s.index + step + Math.max(list.length, 1)) % Math.max(list.length, 1) });
+            return true;
+          }
+          if ((event.key === "Enter" || event.key === "Tab") && list[s.index]) {
+            event.preventDefault();
+            insertTemplate(editor, list[s.index]);
+            return true;
+          }
+          if (event.key === "Escape") {
+            setSlash(null);
+            return true;
+          }
+        }
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
           event.preventDefault();
           onSubmit();
@@ -75,13 +149,21 @@ export function RichEditor({
         return false;
       },
     },
-    onUpdate: ({ editor }) =>
+    onUpdate: ({ editor }) => {
       onChange({
         html: editor.getHTML(),
         text: editor.getText({ blockSeparator: "\n\n" }),
         empty: editor.isEmpty,
-      }),
+      });
+      detectSlash(editor);
+    },
+    onSelectionUpdate: ({ editor }) => detectSlash(editor),
+    onBlur: () => setTimeout(() => setSlash(null), 150),
   });
+
+  useEffect(() => {
+    if (editorRef) editorRef.current = editor;
+  }, [editor, editorRef]);
 
   useEffect(() => {
     if (editor && autoFocusKey) editor.commands.focus("end");
@@ -94,11 +176,70 @@ export function RichEditor({
   }, [editor, resetKey]);
 
   return (
-    <div className={cn("flex flex-col", className)}>
-      <Toolbar editor={editor} />
+    <div ref={boxRef} className={cn("relative flex flex-col", className)}>
+      <Toolbar editor={editor} hasTemplates={!!templates} />
       <EditorContent editor={editor} />
+      {slash && editor && (
+        <div
+          className="absolute z-40 w-72 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg"
+          style={{ top: slash.top, left: slash.left }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <p className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+            Templates{slash.query ? ` matching “${slash.query}”` : ""}
+          </p>
+          {matches.length ? (
+            <ul className="max-h-64 overflow-y-auto">
+              {matches.map((t, i) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => setSlash({ ...slash, index: i })}
+                    onClick={() => insertTemplate(editor, t)}
+                    className={cn(
+                      "block w-full rounded-md px-2 py-1.5 text-left",
+                      i === slash.index && "bg-[var(--accent)]",
+                    )}
+                  >
+                    <span className="block truncate text-sm font-medium">{t.name}</span>
+                    <span className="block truncate text-xs text-[var(--muted-foreground)]">
+                      {plainText(t.bodyHtml)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-2 py-2 text-xs text-[var(--muted-foreground)]">
+              {templates?.length ? "No template matches." : "No templates yet."}{" "}
+              <Link href="/templates" className="underline">
+                Manage templates
+              </Link>
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function plainText(html: string) {
+  return html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().slice(0, 90);
+}
+
+/** Name matches first (prefix, then anywhere), then body text. */
+function matchTemplates(list: TemplateOption[], query: string) {
+  const q = query.toLowerCase().replace(/[-_]/g, " ");
+  if (!q) return list.slice(0, 8);
+  const scored = list
+    .map((t) => {
+      const name = t.name.toLowerCase();
+      const score = name.startsWith(q) ? 3 : name.includes(q) ? 2 : plainText(t.bodyHtml).toLowerCase().includes(q) ? 1 : 0;
+      return { t, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name));
+  return scored.slice(0, 8).map((x) => x.t);
 }
 
 function promptLink(editor: Editor | null) {
@@ -113,7 +254,7 @@ function promptLink(editor: Editor | null) {
   editor.chain().focus().extendMarkRange("link").setLink({ href: url.trim() }).run();
 }
 
-function Toolbar({ editor }: { editor: Editor | null }) {
+function Toolbar({ editor, hasTemplates }: { editor: Editor | null; hasTemplates: boolean }) {
   const active = useEditorState({
     editor,
     selector: ({ editor: e }) =>
@@ -170,6 +311,23 @@ function Toolbar({ editor }: { editor: Editor | null }) {
           </button>
         </span>
       ))}
+      {hasTemplates && (
+        <button
+          type="button"
+          title="Insert a template (type / anywhere)"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const { $from } = editor.state.selection;
+            const prev = $from.parent.textBetween(Math.max(0, $from.parentOffset - 1), $from.parentOffset);
+            editor.chain().focus().insertContent(prev && !/\s/.test(prev) ? " /" : "/").run();
+          }}
+          className="ml-auto flex h-7 items-center gap-1.5 rounded-md px-2 text-xs text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"
+        >
+          <FileText className="size-3.5" />
+          Templates
+          <kbd className="rounded border border-[var(--border)] px-1 text-[10px]">/</kbd>
+        </button>
+      )}
     </div>
   );
 }

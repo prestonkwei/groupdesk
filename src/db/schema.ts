@@ -103,6 +103,8 @@ export const tickets = pgTable(
     requesterName: text("requester_name"),
     teamId: uuid("team_id").references(() => teams.id, { onDelete: "set null" }),
     gmailThreadId: text("gmail_thread_id"),
+    /** Came in through the backfill; reports leave these out by default. */
+    imported: boolean("imported").notNull().default(false),
     lastMessageAt: timestamp("last_message_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -278,6 +280,45 @@ export const people = pgTable("people", {
     .defaultNow(),
 });
 
+/* --------------------------------------------------------------- presence */
+
+/**
+ * Who has a ticket open right now, and whether they're writing a reply.
+ * Heartbeats ride on the ticket page's existing poll; rows older than ~30s
+ * mean the agent left. Created UNLOGGED in the migration: it's disposable.
+ */
+export const ticketPresence = pgTable(
+  "ticket_presence",
+  {
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => agents.id, { onDelete: "cascade" }),
+    replying: boolean("replying").notNull().default(false),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ticket_presence_key").on(t.ticketId, t.agentId)],
+);
+
+/* -------------------------------------------------------------- templates */
+
+/** Shared reply templates, inserted from the composer with "/". */
+export const templates = pgTable(
+  "templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    bodyHtml: text("body_html").notNull(),
+    createdBy: uuid("created_by").references(() => agents.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("templates_name_idx").on(t.name)],
+);
+
 /* -------------------------------------------------------------- gmail sync */
 
 /** Single-row table (one connected mailbox), but keyed by email so it can grow. */
@@ -290,6 +331,8 @@ export const gmailSync = pgTable("gmail_sync", {
   lastPushAt: timestamp("last_push_at", { withTimezone: true }),
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
   lastError: text("last_error"),
+  /** Claimed by whichever request runs the opportunistic catch-up sync. */
+  lastCatchupAt: timestamp("last_catchup_at", { withTimezone: true }),
   connectedAt: timestamp("connected_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -364,5 +407,6 @@ export type Team = typeof teams.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type TicketEvent = typeof events.$inferSelect;
 export type GmailSync = typeof gmailSync.$inferSelect;
+export type Template = typeof templates.$inferSelect;
 export type TicketPriority = (typeof ticketPriority.enumValues)[number];
 export type TicketStatus = (typeof ticketStatus.enumValues)[number];

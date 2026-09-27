@@ -121,6 +121,11 @@ name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
   `directory.readonly`). Enable the People API in the Cloud project and
   reconnect Gmail once so the new scope is granted. Photos are cached in
   `people` for a week; anyone outside the directory gets initials.
+- **Templates** live at `/templates`, shared by the whole team. Type `/` in any
+  reply to insert one; `{{first_name}}`, `{{ticket_number}}`, `{{agent_name}}`
+  and friends are filled in, with `{{first_name|there}}` as a fallback form.
+- **Reports** (`/admin/reports`, admins) leave out tickets marked `imported`
+  (created by the backfill) unless asked to include them.
 - **Search** is fuzzy (`pg_trgm`, enabled by migration 0001): typo-tolerant on
   subject and requester, plus exact text in message bodies and `#1234`.
 
@@ -139,17 +144,21 @@ name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
 4. `vercel-build` runs `db:migrate` before `next build`, so schema changes ship
    with the deploy.
 
-### Crons
+### Crons and catch-up
 
-`vercel.json` schedules `/api/cron/gmail-watch` daily, which the Hobby plan
-allows. The 5-minute reconcile needs one of:
+`vercel.json` schedules `/api/cron/gmail-watch` (watch renewal) and
+`/api/cron/gmail-reconcile` (catch-up sync) once a day each, which the Hobby
+plan allows. Between those, the catch-up runs two other ways:
 
-- Vercel Pro, adding
-  `{ "path": "/api/cron/gmail-reconcile", "schedule": "*/5 * * * *" }`
-- A Cloudflare Worker cron trigger
-- n8n on the Mac mini
+- **In the app.** The portal's 5-second poll runs the same sync whenever
+  nothing has synced for 5 minutes, so dropped pushes are picked up as long
+  as anyone has the portal open.
+- **GitHub Actions**, every 10 minutes (`.github/workflows/gmail-reconcile.yml`).
+  Add the repository secret `CRON_SECRET` (same value as in Vercel) to turn it
+  on; it skips quietly without it. Set the repository variable `APP_URL` if the
+  site moves off `https://tickets.example.org`.
 
-calling the endpoint with `Authorization: Bearer $CRON_SECRET`.
+The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
 
 ## Security notes
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { requireAgent } from "@/lib/auth";
-import { listAgents, recentRequesters } from "@/lib/queries";
+import { listAgents, listTemplates, recentRequesters } from "@/lib/queries";
 import { photosFor } from "@/lib/people";
 import { env } from "@/lib/env";
 import { NewMessageForm } from "@/components/new-message";
@@ -15,7 +15,11 @@ export default async function NewMessagePage({
 }) {
   const { agent } = await requireAgent();
   const { to } = await searchParams;
-  const [agentList, requesters] = await Promise.all([listAgents(true), recentRequesters()]);
+  const [agentList, requesters, templateList] = await Promise.all([
+    listAgents(true),
+    recentRequesters(),
+    listTemplates(),
+  ]);
 
   const contacts = new Map<string, { email: string; name: string | null }>();
   for (const a of agentList) contacts.set(a.email.toLowerCase(), { email: a.email.toLowerCase(), name: a.name });
@@ -44,6 +48,7 @@ export default async function NewMessagePage({
           defaultTo={to && to.includes("@") ? [to.toLowerCase()] : []}
           defaultCc={[env.groupEmail.toLowerCase()]}
           contacts={[...contacts.values()].map((c) => ({ ...c, photo: photos[c.email] ?? null }))}
+          templates={templateList.map((t) => ({ id: t.id, name: t.name, bodyHtml: t.bodyHtml }))}
         />
       </div>
     </div>

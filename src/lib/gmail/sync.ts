@@ -1,5 +1,5 @@
 import "server-only";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { gmailSync } from "@/db/schema";
 import { env } from "@/lib/env";
@@ -231,4 +231,37 @@ export async function startWatch(email?: string): Promise<WatchResult> {
     .where(eq(gmailSync.email, mailbox));
 
   return { historyId: data.historyId, expiration };
+}
+
+/* -------------------------------------------------------------- catch-up */
+
+const CATCHUP_EVERY = "5 minutes";
+
+/**
+ * Run the history sync if nothing has synced for a few minutes. Called from
+ * the portal's 5-second poll, so dropped pushes get picked up whenever anyone
+ * has the portal open, with no scheduler needed. One UPDATE claims the slot,
+ * so concurrent tabs and agents never pile up behind the sync lock.
+ */
+export async function catchUpIfStale(): Promise<void> {
+  const claimed = await db
+    .update(gmailSync)
+    .set({ lastCatchupAt: new Date() })
+    .where(
+      and(
+        eq(gmailSync.email, env.gmailMailbox),
+        sql`(${gmailSync.lastCatchupAt} is null or ${gmailSync.lastCatchupAt} < now() - ${CATCHUP_EVERY}::interval)`,
+        sql`(${gmailSync.lastSyncAt} is null or ${gmailSync.lastSyncAt} < now() - ${CATCHUP_EVERY}::interval)`,
+      ),
+    )
+    .returning({ email: gmailSync.email });
+  if (!claimed.length) return;
+
+  try {
+    const s = await syncFromHistory();
+    if (s.ingested) console.log("[gmail catch-up]", JSON.stringify(s));
+  } catch (err) {
+    // syncFromHistory already recorded the error on the sync row.
+    console.error("gmail catch-up failed", err);
+  }
 }

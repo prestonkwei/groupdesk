@@ -13,6 +13,8 @@ import {
   UserCog,
   Star,
   PenSquare,
+  FileText,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TagDot } from "@/components/ui/badge";
@@ -34,6 +36,7 @@ const VIEWS = [
 ] as const;
 
 const ADMIN = [
+  { href: "/admin/reports", label: "Reports", icon: BarChart3 },
   { href: "/admin/agents", label: "Agents", icon: UserCog },
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/tags", label: "Tags", icon: Tags },
@@ -101,6 +104,17 @@ export function Sidebar({
           );
         })}
       </div>
+
+      <Link
+        href="/templates"
+        className={cn(
+          "-mt-4 flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--accent)]",
+          pathname === "/templates" && "bg-[var(--accent)] font-medium",
+        )}
+      >
+        <FileText className="size-4 text-[var(--muted-foreground)]" />
+        Templates
+      </Link>
 
       {teams.length > 0 && (
         <div className="flex flex-col gap-0.5">

@@ -93,3 +93,15 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Report charts: categorical slots 1–2 of the validated palette, stepped per mode. */
+.viz-root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --grid: oklch(0.93 0.004 264);
+}
+.dark .viz-root {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --grid: oklch(0.3 0.012 264);
+}

@@ -10,6 +10,8 @@ import {
   listTeams,
   neighbours,
   replyRecipients,
+  listTemplates,
+  requesterHistory,
   ticketAssigneeIds,
   ticketTagIds,
 } from "@/lib/queries";
@@ -17,9 +19,11 @@ import { taggedSubject } from "@/lib/ticket-subject";
 import { photosFor } from "@/lib/people";
 import { env } from "@/lib/env";
 import { Thread } from "@/components/thread";
+import { RequesterHistory } from "@/components/requester-history";
 import { Composer } from "@/components/composer";
 import {
   MobileDetails,
+  PresenceBar,
   StarButton,
   TicketHotkeys,
   TicketProperties,
@@ -27,7 +31,6 @@ import {
 } from "@/components/ticket-workspace";
 import { Avatar } from "@/components/ui/avatar";
 import { AgeBadge } from "@/components/ui/age-badge";
-import { LiveRefresh } from "@/components/live-refresh";
 import { dateTime, relativeTime, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -46,7 +49,7 @@ export default async function TicketPage({
   const ticket = await getTicketByNumber(n, agent);
   if (!ticket) notFound();
 
-  const [thread, agentList, teamList, tagList, activeTagIds, assigneeIds, nav] =
+  const [thread, agentList, teamList, tagList, activeTagIds, assigneeIds, nav, history, templateList] =
     await Promise.all([
       getThread(ticket.id),
       listAgents(true),
@@ -55,6 +58,8 @@ export default async function TicketPage({
       ticketTagIds(ticket.id),
       ticketAssigneeIds(ticket.id),
       neighbours(ticket),
+      requesterHistory(ticket.requesterEmail, ticket.id),
+      listTemplates(),
     ]);
 
   const photos = await photosFor([
@@ -109,7 +114,6 @@ export default async function TicketPage({
       teams={teamList.map((t) => ({ id: t.id, name: t.name }))}
       tags={tagList.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
     >
-      <LiveRefresh intervalMs={5000} />
       <TicketHotkeys newer={nav.newer} older={nav.older} />
 
       <div className="flex h-[calc(100dvh-3rem)]">
@@ -134,7 +138,8 @@ export default async function TicketPage({
             <span className="ml-1 text-xs tabular-nums text-[var(--muted-foreground)]">
               #{ticket.number}
             </span>
-            <div className="ml-auto">
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              <PresenceBar />
               <StarButton />
             </div>
           </header>
@@ -147,6 +152,7 @@ export default async function TicketPage({
                   {ticket.requesterEmail}
                 </a>
               </p>
+              <RequesterHistory email={ticket.requesterEmail} {...history} />
             </MobileDetails>
             <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-6 sm:pt-6">
               <h1 className="text-lg font-semibold leading-snug tracking-tight sm:text-xl">
@@ -184,6 +190,9 @@ export default async function TicketPage({
             defaultTo={recipients.to}
             defaultCc={recipients.cc}
             contacts={[...contacts.values()]}
+            templates={templateList.map((t) => ({ id: t.id, name: t.name, bodyHtml: t.bodyHtml }))}
+            ticketNumber={ticket.number}
+            ticketSubject={ticket.subject}
           />
         </div>
 
@@ -222,6 +231,10 @@ export default async function TicketPage({
                 {shortDate(ticket.lastMessageAt)} · {relativeTime(ticket.lastMessageAt)}
               </dd>
             </dl>
+          </div>
+
+          <div className="border-t border-[var(--border)] p-4">
+            <RequesterHistory email={ticket.requesterEmail} {...history} />
           </div>
         </aside>
       </div>

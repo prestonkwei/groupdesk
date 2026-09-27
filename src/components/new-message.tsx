@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { startTicket } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
-import { RichEditor, type RichValue } from "@/components/rich-editor";
+import { RichEditor, type RichValue, type TemplateOption } from "@/components/rich-editor";
+import { firstNameOf, recipientVars } from "@/lib/template-vars";
 import { RecipientField, type Contact } from "@/components/recipient-field";
 
 /**
@@ -18,12 +19,14 @@ export function NewMessageForm({
   defaultTo,
   defaultCc,
   contacts,
+  templates,
 }: {
   fromName: string;
   fromEmail: string;
   defaultTo: string[];
   defaultCc: string[];
   contacts: Contact[];
+  templates: TemplateOption[];
 }) {
   const router = useRouter();
   const [to, setTo] = useState(defaultTo);
@@ -98,7 +101,15 @@ export function NewMessageForm({
           />
         </div>
         <RichEditor
-          placeholder="Write your message…"
+          placeholder="Write your message… (type / for templates)"
+          templates={templates}
+          variables={() => {
+            const email = to[0] ?? "";
+            return recipientVars(
+              { email, name: contacts.find((c) => c.email === email)?.name },
+              { subject, agent_name: fromName, agent_first_name: firstNameOf(fromName) },
+            );
+          }}
           onChange={setBody}
           onSubmit={send}
           onEscape={() => {}}

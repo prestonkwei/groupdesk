@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   agents,
@@ -12,6 +12,7 @@ import {
   agentTeams,
   attachments,
   ticketAssignees,
+  templates,
   type Agent,
 } from "@/db/schema";
 
@@ -385,4 +386,39 @@ export async function recentRequesters(limit = 300) {
     .groupBy(tickets.requesterEmail)
     .orderBy(desc(sql`max(${tickets.lastMessageAt})`))
     .limit(limit);
+}
+
+/** The requester's other tickets, newest first, for the ticket sidebar. */
+export async function requesterHistory(email: string, excludeId: string, limit = 8) {
+  const where = and(sql`lower(${tickets.requesterEmail}) = ${email.toLowerCase()}`, ne(tickets.id, excludeId));
+  const [rows, [count]] = await Promise.all([
+    db
+      .select({
+        number: tickets.number,
+        subject: tickets.subject,
+        status: tickets.status,
+        createdAt: tickets.createdAt,
+      })
+      .from(tickets)
+      .where(where)
+      .orderBy(desc(tickets.createdAt))
+      .limit(limit),
+    db.select({ n: sql<number>`count(*)::int` }).from(tickets).where(where),
+  ]);
+  return { rows, total: count?.n ?? 0 };
+}
+
+/** The shared template library, for the composer's "/" menu and /templates. */
+export async function listTemplates() {
+  return db
+    .select({
+      id: templates.id,
+      name: templates.name,
+      bodyHtml: templates.bodyHtml,
+      updatedAt: templates.updatedAt,
+      updatedByName: agents.name,
+    })
+    .from(templates)
+    .leftJoin(agents, eq(agents.id, templates.updatedBy))
+    .orderBy(asc(templates.name));
 }

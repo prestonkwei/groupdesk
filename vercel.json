@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/cron/gmail-watch", "schedule": "17 9 * * *" }
+    { "path": "/api/cron/gmail-watch", "schedule": "17 9 * * *" },
+    { "path": "/api/cron/gmail-reconcile", "schedule": "47 10 * * *" }
   ]
 }

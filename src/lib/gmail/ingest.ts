@@ -105,6 +105,7 @@ function stripReplyPrefix(subject: string) {
 export async function ingestGmailMessage(
   client: GmailClient,
   gmailMessageId: string,
+  options: { imported?: boolean } = {},
 ): Promise<IngestResult> {
   const existing = await db
     .select({ id: messages.id })
@@ -129,6 +130,7 @@ export async function ingestGmailMessage(
     gmailMessageId,
     gmailThreadId: data.threadId ?? null,
     internalDate: data.internalDate ? Number(data.internalDate) : undefined,
+    imported: options.imported,
   });
 }
 
@@ -137,6 +139,8 @@ export async function ingestParsedEmail(input: {
   gmailMessageId: string | null;
   gmailThreadId: string | null;
   internalDate?: number;
+  /** Set by the backfill: a ticket it creates is marked as imported. */
+  imported?: boolean;
 }): Promise<IngestResult> {
   const { parsed, gmailMessageId, gmailThreadId } = input;
 
@@ -189,6 +193,7 @@ export async function ingestParsedEmail(input: {
       sender,
       direction,
       sentAt,
+      imported: input.imported ?? false,
     });
 
     const [inserted] = await tx
@@ -264,6 +269,7 @@ async function findOrCreateTicket(
     sender: { email: string; name: string | null };
     direction: "inbound" | "outbound";
     sentAt: Date;
+    imported: boolean;
   },
 ) {
   const candidateIds = [args.inReplyTo, ...args.refs].filter(
@@ -316,7 +322,10 @@ async function findOrCreateTicket(
       requesterEmail: args.sender.email,
       requesterName: args.sender.name,
       gmailThreadId: args.gmailThreadId,
+      // "Opened" is when the email was sent, not when we happened to fetch it.
+      createdAt: args.sentAt,
       lastMessageAt: args.sentAt,
+      imported: args.imported,
       status: "open",
     })
     .returning();

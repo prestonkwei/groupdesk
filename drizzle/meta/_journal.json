@@ -15,6 +15,13 @@
       "when": 1790534340806,
       "tag": "0001_ticket_ui_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790538006469,
+      "tag": "0002_reports_presence_templates",
+      "breakpoints": true
     }
   ]
 }
