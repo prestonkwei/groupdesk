@@ -37,8 +37,11 @@ export async function rosterPerson(email: string): Promise<RosterPerson | null> 
     cache: "no-store",
     signal: AbortSignal.timeout(8000),
   });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new RosterError(res.status);
+  // Only the route's own JSON 404 means "no such person"; a page-level 404 means
+  // the route isn't deployed, which should be retried rather than cached.
+  const json = res.headers.get("content-type")?.includes("application/json");
+  if (res.status === 404 && json) return null;
+  if (!res.ok || !json) throw new RosterError(res.status);
   return (await res.json()) as RosterPerson;
 }
 
