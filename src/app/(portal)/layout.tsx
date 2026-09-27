@@ -5,7 +5,8 @@ import { listTags, listTeams, viewCounts } from "@/lib/queries";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { photosFor } from "@/lib/people";
-import { Avatar } from "@/components/ui/avatar";
+import { UserMenu } from "@/components/user-menu";
+import { env } from "@/lib/env";
 import { GlobalShortcuts } from "@/components/shortcuts";
 
 export default async function PortalLayout({
@@ -40,15 +41,12 @@ export default async function PortalLayout({
         </Link>
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
           <GlobalShortcuts />
-          <span className="flex items-center gap-2">
-            <span className="hidden sm:inline">{agent.name}</span>
-            <Avatar
-              name={agent.name}
-              email={agent.email}
-              photo={photos[agent.email.toLowerCase()]}
-              size="sm"
-            />
-          </span>
+          <UserMenu
+            name={agent.name}
+            email={agent.email}
+            photo={photos[agent.email.toLowerCase()] ?? null}
+            logoutUrl={env.cfTeamDomain && env.cfAud ? "/cdn-cgi/access/logout" : null}
+          />
         </div>
       </header>
 
