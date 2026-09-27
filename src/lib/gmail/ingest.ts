@@ -7,10 +7,11 @@ import { agents, attachments, events, messages, tickets } from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
 import { stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
+import { flagVipIfFaculty } from "@/lib/vip";
 
 export type IngestResult =
   | { status: "skipped"; reason: string }
-  | { status: "ingested"; ticketId: string; ticketNumber: number; messageId: string };
+  | { status: "ingested"; ticketId: string; ticketNumber: number; messageId: string; newTicket: boolean };
 
 /* -------------------------------------------------------------- header help */
 
@@ -243,11 +244,15 @@ export async function ingestParsedEmail(input: {
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       messageId: inserted.id,
+      newTicket: ticket.created,
     };
   });
 
   if (result.status === "ingested") {
     await storeAttachments(result.messageId, parsed);
+    if (result.newTicket && direction === "inbound") {
+      await flagVipIfFaculty(result.ticketId, sender.email);
+    }
   }
   return result;
 }
@@ -283,7 +288,7 @@ async function findOrCreateTicket(
         .from(tickets)
         .where(eq(tickets.id, hit.ticketId))
         .limit(1);
-      if (t) return t;
+      if (t) return { ...t, created: false };
     }
   }
 
@@ -295,7 +300,7 @@ async function findOrCreateTicket(
       .from(tickets)
       .where(eq(tickets.number, tagged))
       .limit(1);
-    if (t) return t;
+    if (t) return { ...t, created: false };
   }
 
   // 3. Gmail's own threadId.
@@ -305,7 +310,7 @@ async function findOrCreateTicket(
       .from(tickets)
       .where(eq(tickets.gmailThreadId, args.gmailThreadId))
       .limit(1);
-    if (t) return t;
+    if (t) return { ...t, created: false };
   }
 
   // 4. New ticket.
@@ -327,7 +332,7 @@ async function findOrCreateTicket(
     data: { via: "email", from: args.sender.email },
   });
 
-  return created;
+  return { ...created, created: true };
 }
 
 /* ----------------------------------------------------------- attachments */

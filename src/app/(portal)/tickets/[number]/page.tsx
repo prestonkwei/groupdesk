@@ -26,9 +26,11 @@ import {
   TicketProvider,
 } from "@/components/ticket-workspace";
 import { Avatar } from "@/components/ui/avatar";
+import { VIP_RING, VipMark } from "@/components/ui/badge";
+import { isVipTag } from "@/lib/vip-tag";
 import { AgeBadge } from "@/components/ui/age-badge";
 import { LiveRefresh } from "@/components/live-refresh";
-import { dateTime, relativeTime, shortDate } from "@/lib/utils";
+import { cn, dateTime, relativeTime, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +66,7 @@ export default async function TicketPage({
   ]);
   const photo = (email: string) => photos[email.toLowerCase()] ?? null;
   const requesterLabel = ticket.requesterName || ticket.requesterEmail;
+  const vip = tagList.some((t) => isVipTag(t) && activeTagIds.includes(t.id));
   const recipients = replyRecipients(ticket, thread.messages, {
     group: env.groupEmail,
     mailbox: env.gmailMailbox,
@@ -158,8 +161,10 @@ export default async function TicketPage({
                   email={ticket.requesterEmail}
                   photo={photo(ticket.requesterEmail)}
                   size="xs"
+                  className={cn(vip && VIP_RING)}
                 />
                 <span className="font-medium text-[var(--foreground)]">{requesterLabel}</span>
+                {vip && <VipMark />}
                 <span aria-hidden>·</span>
                 <span>came in</span>
                 <AgeBadge
@@ -200,9 +205,13 @@ export default async function TicketPage({
                 email={ticket.requesterEmail}
                 photo={photo(ticket.requesterEmail)}
                 size="lg"
+                className={cn(vip && VIP_RING)}
               />
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{requesterLabel}</p>
+                <p className="flex items-center gap-1 text-sm font-medium">
+                  <span className="truncate">{requesterLabel}</span>
+                  {vip && <VipMark />}
+                </p>
                 <a
                   href={`mailto:${ticket.requesterEmail}`}
                   className="block truncate text-xs text-[var(--muted-foreground)] hover:underline"

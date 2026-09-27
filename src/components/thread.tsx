@@ -31,7 +31,9 @@ function describe(e: ThreadEvent): string {
     case "team":
       return d.teamName ? `${who} moved to ${d.teamName}` : `${who} cleared the team`;
     case "tag_added":
-      return `${who} added ${d.tagName}`;
+      return d.auto === "faculty"
+        ? `Tagged ${d.tagName} automatically: the requester is faculty`
+        : `${who} added ${d.tagName}`;
     case "tag_removed":
       return `${who} removed ${d.tagName}`;
     default:

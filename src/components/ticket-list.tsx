@@ -16,7 +16,8 @@ import {
 } from "@/lib/actions/tickets";
 import { useHotkeys } from "@/lib/hotkeys";
 import { Avatar } from "@/components/ui/avatar";
-import { TagBadge } from "@/components/ui/badge";
+import { TagBadge, VIP_RING, VipMark } from "@/components/ui/badge";
+import { isVipTag } from "@/lib/vip-tag";
 import { Picker } from "@/components/ui/picker";
 import {
   PRIORITIES,
@@ -295,6 +296,9 @@ export function TicketList({
               ? [...t.assignees, { id: me.id, name: me.name, email: me.email }]
               : t.assignees;
           const unsolved = t.status === "open" || t.status === "pending";
+          const vip = t.tags.some(isVipTag);
+          // VIP first, so it survives the two-tag limit below.
+          const rowTags = vip ? [...t.tags].sort((a, b) => Number(isVipTag(b)) - Number(isVipTag(a))) : t.tags;
 
           return (
             <li key={t.id} data-row={i}>
@@ -360,10 +364,11 @@ export function TicketList({
                     email={t.requesterEmail}
                     photo={photos[t.requesterEmail.toLowerCase()]}
                     size="xs"
-                    className="hidden sm:grid"
+                    className={cn("hidden sm:grid", vip && VIP_RING)}
                   />
-                  <span className="hidden w-36 shrink-0 truncate text-[var(--muted-foreground)] sm:block">
-                    {t.requesterName || t.requesterEmail}
+                  <span className="hidden w-36 shrink-0 items-center gap-1 text-[var(--muted-foreground)] sm:flex">
+                    <span className="truncate">{t.requesterName || t.requesterEmail}</span>
+                    {vip && <VipMark />}
                   </span>
                   {/* Phones: subject over a "requester · #n" line. */}
                   <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2">
@@ -371,6 +376,7 @@ export function TicketList({
                       {t.subject}
                     </span>
                     <span className="truncate text-xs text-[var(--muted-foreground)] sm:hidden">
+                      {vip && <VipMark className="mr-1 align-[-2px]" />}
                       {t.requesterName || t.requesterEmail} · #{t.number}
                       {t.messageCount > 1 ? ` · ${t.messageCount} messages` : ""}
                     </span>
@@ -383,7 +389,7 @@ export function TicketList({
                 </Link>
 
                 <div className="hidden shrink-0 items-center gap-1.5 lg:flex">
-                  {t.tags.slice(0, 2).map((tag) => (
+                  {rowTags.slice(0, 2).map((tag) => (
                     <TagBadge key={tag.slug} name={tag.name} color={tag.color} />
                   ))}
                   {t.tags.length > 2 && (

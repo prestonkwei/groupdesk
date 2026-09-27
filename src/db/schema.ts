@@ -265,9 +265,9 @@ export const events = pgTable(
 /* ------------------------------------------------------------------ photos */
 
 /**
- * Profile photos from the Google Workspace directory, keyed by lowercased
- * email. `photoUrl` is null when the person has no custom photo or isn't in
- * the directory; `fetchedAt` decides when to look again.
+ * Profile photos, keyed by lowercased email: from Roster's /api/people, or the
+ * Google Workspace directory when Roster has none. `photoUrl` is null when
+ * neither has a photo; `fetchedAt` decides when to look again.
  */
 export const people = pgTable("people", {
   email: text("email").primaryKey(),
