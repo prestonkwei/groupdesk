@@ -193,13 +193,23 @@ export async function startWatch(email?: string): Promise<WatchResult> {
 
   const labelId = await resolveLabelId(client, row?.labelId);
 
-  const { data } = await client.users.watch({
-    userId: "me",
-    requestBody: {
-      topicName: env.pubsubTopic,
-      labelIds: [labelId],
-      labelFilterBehavior: "include",
-    },
+  const watch = () =>
+    client.users.watch({
+      userId: "me",
+      requestBody: {
+        topicName: env.pubsubTopic,
+        labelIds: [labelId],
+        labelFilterBehavior: "include",
+      },
+    });
+
+  // Gmail sometimes refuses to replace a live watch ("Only one user push
+  // notification client allowed per developer"). Stop it and watch again;
+  // the stored history cursor covers anything that lands in between.
+  const { data } = await watch().catch(async (err: unknown) => {
+    if (!/only one user push notification client/i.test(String(err))) throw err;
+    await client.users.stop({ userId: "me" });
+    return watch();
   });
 
   if (!data.historyId || !data.expiration) {
