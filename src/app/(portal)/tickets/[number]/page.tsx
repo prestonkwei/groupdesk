@@ -27,7 +27,7 @@ import {
 import { Avatar } from "@/components/ui/avatar";
 import { AgeBadge } from "@/components/ui/age-badge";
 import { LiveRefresh } from "@/components/live-refresh";
-import { relativeTime } from "@/lib/utils";
+import { dateTime, relativeTime, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -205,12 +205,12 @@ export default async function TicketPage({
 
             <dl className="mt-5 grid grid-cols-[76px_1fr] gap-x-2 gap-y-2 text-xs">
               <dt className="text-[var(--muted-foreground)]">Opened</dt>
-              <dd title={new Date(ticket.createdAt).toLocaleString()}>
-                {relativeTime(ticket.createdAt)}
+              <dd title={dateTime(ticket.createdAt)}>
+                {shortDate(ticket.createdAt)}
               </dd>
               <dt className="text-[var(--muted-foreground)]">Last reply</dt>
-              <dd title={new Date(ticket.lastMessageAt).toLocaleString()}>
-                {relativeTime(ticket.lastMessageAt)}
+              <dd title={dateTime(ticket.lastMessageAt)}>
+                {shortDate(ticket.lastMessageAt)} · {relativeTime(ticket.lastMessageAt)}
               </dd>
             </dl>
           </div>

@@ -14,6 +14,35 @@ export function slugify(s: string) {
     .slice(0, 60);
 }
 
+/**
+ * Dates render the same on the server (UTC on Vercel) and in the browser, in
+ * the school's time zone, so a late-evening email never shows as the next day.
+ */
+export const TIME_ZONE = process.env.NEXT_PUBLIC_TIME_ZONE || "America/Los_Angeles";
+
+/** "Jul 24, 2025": always with the year, since old mail spans years. */
+export function shortDate(date: Date | string) {
+  return new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: TIME_ZONE,
+  });
+}
+
+/** "Thu, Jul 24, 2025, 9:06 AM" */
+export function dateTime(date: Date | string) {
+  return new Date(date).toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: TIME_ZONE,
+  });
+}
+
 export function relativeTime(date: Date | string) {
   const d = typeof date === "string" ? new Date(date) : date;
   const diff = Date.now() - d.getTime();
@@ -24,7 +53,7 @@ export function relativeTime(date: Date | string) {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   if (day < 7) return `${day}d ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return shortDate(d);
 }
 
 export function initials(nameOrEmail: string) {

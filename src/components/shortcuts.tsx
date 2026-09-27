@@ -25,6 +25,10 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
       ["Enter or o", "Open ticket"],
       ["s", "Star / unstar"],
       ["i", "Assign to me"],
+      ["x", "Select ticket"],
+      ["⇧ x", "Select range"],
+      ["a p c t m", "With a selection: assign, priority, status, tags, team"],
+      ["Esc", "Clear selection"],
     ],
   },
   {

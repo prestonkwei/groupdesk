@@ -2,7 +2,7 @@
 
 import * as Popover from "@radix-ui/react-popover";
 import { Command } from "cmdk";
-import { Check } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type PickerItem = {
@@ -29,17 +29,22 @@ export function Picker({
   multi = false,
   emptyText = "No matches",
   align = "start",
+  side = "bottom",
+  partial = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   trigger: React.ReactNode;
   items: PickerItem[];
   selected: string[];
+  /** Multi only: values some-but-not-all of a bulk selection have (shown as a dash). */
+  partial?: string[];
   onSelect: (value: string) => void;
   placeholder: string;
   multi?: boolean;
   emptyText?: string;
-  align?: "start" | "end";
+  align?: "start" | "end" | "center";
+  side?: "top" | "bottom";
 }) {
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
@@ -47,6 +52,7 @@ export function Picker({
       <Popover.Portal>
         <Popover.Content
           align={align}
+          side={side}
           sideOffset={6}
           collisionPadding={12}
           className="z-50 w-64 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-lg outline-none"
@@ -64,6 +70,7 @@ export function Picker({
               </Command.Empty>
               {items.map((item) => {
                 const on = selected.includes(item.value);
+                const some = !on && partial.includes(item.value);
                 return (
                   <Command.Item
                     key={item.value}
@@ -79,12 +86,13 @@ export function Picker({
                       <span
                         className={cn(
                           "grid size-4 shrink-0 place-items-center rounded border",
-                          on
+                          on || some
                             ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
                             : "border-[var(--input)]",
                         )}
                       >
                         {on && <Check className="size-3" />}
+                        {some && <Minus className="size-3" />}
                       </span>
                     )}
                     {item.icon}

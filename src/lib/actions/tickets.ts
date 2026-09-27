@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   agents,
@@ -230,6 +230,198 @@ export async function toggleStar(ticketId: string): Promise<ActionState> {
 
   refresh(ticket.number);
   return { ok: removed.length ? "Unstarred" : "Starred" };
+}
+
+/* ------------------------------------------------------------------ bulk */
+
+export type BulkOp =
+  | { kind: "status"; status: TicketStatus }
+  | { kind: "priority"; priority: TicketPriority }
+  | { kind: "team"; teamId: string | null }
+  | { kind: "assignee"; agentId: string; add: boolean }
+  | { kind: "clearAssignees" }
+  | { kind: "tag"; tagId: string; add: boolean }
+  | { kind: "star"; add: boolean };
+
+/**
+ * Apply one change to many tickets. Only tickets that actually change get an
+ * activity entry, so re-applying a tag to a mixed selection doesn't spam the
+ * history of the ones that already had it.
+ */
+export async function bulkUpdate(ticketIds: string[], op: BulkOp): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const ids = [...new Set(ticketIds)].slice(0, 500);
+  if (!ids.length) return { error: "Select some tickets first" };
+
+  const now = new Date();
+  let changed: string[] = [];
+  let label = "";
+
+  if (op.kind === "status" || op.kind === "priority") {
+    const column = op.kind === "status" ? tickets.status : tickets.priority;
+    const value = op.kind === "status" ? op.status : op.priority;
+    if (!column.enumValues.includes(value as never)) return { error: `Unknown ${op.kind}` };
+    const before = await db
+      .select({ id: tickets.id, from: column })
+      .from(tickets)
+      .where(and(inArray(tickets.id, ids), ne(column, value as never)));
+    changed = before.map((r) => r.id);
+    if (changed.length) {
+      await db
+        .update(tickets)
+        .set({ [op.kind]: value, updatedAt: now })
+        .where(inArray(tickets.id, changed));
+      await db.insert(events).values(
+        before.map((r) => ({
+          ticketId: r.id,
+          actorAgentId: agent.id,
+          kind: op.kind,
+          data: { from: r.from, to: value },
+        })),
+      );
+    }
+    label = `${op.kind === "status" ? "Status" : "Priority"} set to ${op.kind === "priority" && value !== "none" ? value.toUpperCase() : value}`;
+  } else if (op.kind === "team") {
+    let name: string | null = null;
+    if (op.teamId) {
+      const [t] = await db.select().from(teams).where(eq(teams.id, op.teamId)).limit(1);
+      if (!t) return { error: "Unknown team" };
+      name = t.name;
+    }
+    const rows = await db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(
+        and(
+          inArray(tickets.id, ids),
+          op.teamId
+            ? sql`${tickets.teamId} is distinct from ${op.teamId}`
+            : sql`${tickets.teamId} is not null`,
+        ),
+      );
+    changed = rows.map((r) => r.id);
+    if (changed.length) {
+      await db.update(tickets).set({ teamId: op.teamId, updatedAt: now }).where(inArray(tickets.id, changed));
+      await db.insert(events).values(
+        changed.map((ticketId) => ({
+          ticketId,
+          actorAgentId: agent.id,
+          kind: "team",
+          data: { teamId: op.teamId, teamName: name },
+        })),
+      );
+    }
+    label = name ? `Moved to ${name}` : "Team cleared";
+  } else if (op.kind === "assignee") {
+    const [target] = await db.select().from(agents).where(eq(agents.id, op.agentId)).limit(1);
+    if (!target) return { error: "Unknown agent" };
+    const has = await db
+      .select({ id: ticketAssignees.ticketId })
+      .from(ticketAssignees)
+      .where(and(inArray(ticketAssignees.ticketId, ids), eq(ticketAssignees.agentId, op.agentId)));
+    const hasIds = new Set(has.map((r) => r.id));
+    changed = ids.filter((id) => (op.add ? !hasIds.has(id) : hasIds.has(id)));
+    if (changed.length) {
+      if (op.add) {
+        await db
+          .insert(ticketAssignees)
+          .values(changed.map((ticketId) => ({ ticketId, agentId: op.agentId })))
+          .onConflictDoNothing();
+      } else {
+        await db
+          .delete(ticketAssignees)
+          .where(and(inArray(ticketAssignees.ticketId, changed), eq(ticketAssignees.agentId, op.agentId)));
+      }
+      await db.update(tickets).set({ updatedAt: now }).where(inArray(tickets.id, changed));
+      await db.insert(events).values(
+        changed.map((ticketId) => ({
+          ticketId,
+          actorAgentId: agent.id,
+          kind: op.add ? "assigned" : "unassigned",
+          data: { assigneeId: op.agentId, assigneeName: target.name },
+        })),
+      );
+    }
+    label = op.add ? `Assigned to ${target.name}` : `Unassigned ${target.name}`;
+  } else if (op.kind === "clearAssignees") {
+    const removed = await db
+      .delete(ticketAssignees)
+      .where(inArray(ticketAssignees.ticketId, ids))
+      .returning({ id: ticketAssignees.ticketId });
+    changed = [...new Set(removed.map((r) => r.id))];
+    if (changed.length) {
+      await db.update(tickets).set({ updatedAt: now }).where(inArray(tickets.id, changed));
+      await db.insert(events).values(
+        changed.map((ticketId) => ({
+          ticketId,
+          actorAgentId: agent.id,
+          kind: "unassigned",
+          data: { assigneeName: "everyone" },
+        })),
+      );
+    }
+    label = "Unassigned";
+  } else if (op.kind === "tag") {
+    const [tag] = await db.select().from(tags).where(eq(tags.id, op.tagId)).limit(1);
+    if (!tag) return { error: "Unknown tag" };
+    const has = await db
+      .select({ id: ticketTags.ticketId })
+      .from(ticketTags)
+      .where(and(inArray(ticketTags.ticketId, ids), eq(ticketTags.tagId, op.tagId)));
+    const hasIds = new Set(has.map((r) => r.id));
+    changed = ids.filter((id) => (op.add ? !hasIds.has(id) : hasIds.has(id)));
+    if (changed.length) {
+      if (op.add) {
+        await db
+          .insert(ticketTags)
+          .values(changed.map((ticketId) => ({ ticketId, tagId: op.tagId })))
+          .onConflictDoNothing();
+      } else {
+        await db
+          .delete(ticketTags)
+          .where(and(inArray(ticketTags.ticketId, changed), eq(ticketTags.tagId, op.tagId)));
+      }
+      await db.update(tickets).set({ updatedAt: now }).where(inArray(tickets.id, changed));
+      await db.insert(events).values(
+        changed.map((ticketId) => ({
+          ticketId,
+          actorAgentId: agent.id,
+          kind: op.add ? "tag_added" : "tag_removed",
+          data: { tagName: tag.name },
+        })),
+      );
+    }
+    label = op.add ? `Tagged ${tag.name}` : `Removed ${tag.name}`;
+  } else if (op.kind === "star") {
+    if (op.add) {
+      const existing = await db
+        .select({ id: ticketStars.ticketId })
+        .from(ticketStars)
+        .where(and(eq(ticketStars.agentId, agent.id), inArray(ticketStars.ticketId, ids)));
+      const known = existing.map((r) => r.id);
+      const todo = known.length ? ids.filter((id) => !known.includes(id)) : ids;
+      if (todo.length) {
+        await db
+          .insert(ticketStars)
+          .values(todo.map((ticketId) => ({ agentId: agent.id, ticketId })))
+          .onConflictDoNothing();
+      }
+      changed = todo;
+    } else {
+      const removed = await db
+        .delete(ticketStars)
+        .where(and(eq(ticketStars.agentId, agent.id), inArray(ticketStars.ticketId, ids)))
+        .returning({ id: ticketStars.ticketId });
+      changed = removed.map((r) => r.id);
+    }
+    label = op.add ? "Starred" : "Unstarred";
+  } else {
+    return { error: "Unknown change" };
+  }
+
+  revalidatePath("/tickets");
+  const n = ids.length;
+  return { ok: `${label} · ${n} ticket${n === 1 ? "" : "s"}${changed.length < n ? ` (${changed.length} changed)` : ""}` };
 }
 
 /* ----------------------------------------------------------------- reply */

@@ -1,6 +1,13 @@
 import { Suspense } from "react";
 import { requireAgent } from "@/lib/auth";
-import { listTickets, type TicketFilters, type TicketView } from "@/lib/queries";
+import {
+  listAgents,
+  listTags,
+  listTeams,
+  listTickets,
+  type TicketFilters,
+  type TicketView,
+} from "@/lib/queries";
 import { photosFor } from "@/lib/people";
 import { LiveRefresh } from "@/components/live-refresh";
 import { SearchBox } from "@/components/search-box";
@@ -36,11 +43,15 @@ export default async function TicketsPage({
     q: one("q"),
   };
 
-  const rows = await listTickets(filters, agent);
+  const [rows, agentList, teamList, tagList] = await Promise.all([
+    listTickets(filters, agent),
+    listAgents(true),
+    listTeams(),
+    listTags(),
+  ]);
   const photos = await photosFor([
     ...rows.map((r) => r.requesterEmail),
-    ...rows.flatMap((r) => r.assignees.map((a) => a.email)),
-    agent.email,
+    ...agentList.map((a) => a.email),
   ]);
 
   const title = filters.team
@@ -70,6 +81,9 @@ export default async function TicketsPage({
         rows={rows}
         photos={photos}
         me={{ id: agent.id, name: agent.name, email: agent.email }}
+        agents={agentList.map((a) => ({ id: a.id, name: a.name, email: a.email }))}
+        teams={teamList.map((t) => ({ id: t.id, name: t.name }))}
+        tags={tagList.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
       />
     </div>
   );

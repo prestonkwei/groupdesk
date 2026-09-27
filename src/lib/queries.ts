@@ -126,6 +126,7 @@ export async function listTickets(f: TicketFilters, me: Agent) {
       lastMessageAt: tickets.lastMessageAt,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
+      teamId: tickets.teamId,
       teamName: teams.name,
       teamSlug: teams.slug,
       messageCount: sql<number>`(
@@ -148,6 +149,7 @@ export async function listTickets(f: TicketFilters, me: Agent) {
     ? await db
         .select({
           ticketId: ticketTags.ticketId,
+          id: tags.id,
           name: tags.name,
           slug: tags.slug,
           color: tags.color,

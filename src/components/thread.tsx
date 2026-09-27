@@ -6,7 +6,7 @@ import type { ThreadEvent, ThreadMessage } from "@/lib/queries";
 import type { PhotoMap } from "@/lib/people";
 import { HtmlBody, TextBody, splitQuote } from "./message-body";
 import { Avatar } from "@/components/ui/avatar";
-import { cn, relativeTime } from "@/lib/utils";
+import { cn, dateTime, relativeTime } from "@/lib/utils";
 
 type Item =
   | { kind: "message"; at: Date; message: ThreadMessage }
@@ -54,15 +54,6 @@ function snippet(m: ThreadMessage) {
   return text.replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
-function fullDate(d: Date) {
-  return new Date(d).toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export function Thread({
   messages,
@@ -212,10 +203,10 @@ function MessageCard({
             )}
             <time
               className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]"
-              title={fullDate(m.sentAt)}
+              title={dateTime(m.sentAt)}
               dateTime={new Date(m.sentAt).toISOString()}
             >
-              {open ? fullDate(m.sentAt) : relativeTime(m.sentAt)}
+              {open ? dateTime(m.sentAt) : relativeTime(m.sentAt)}
             </time>
           </div>
           {!open && (

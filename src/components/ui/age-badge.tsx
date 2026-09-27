@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+import { cn, dateTime, shortDate } from "@/lib/utils";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -21,7 +21,7 @@ function shortAge(since: Date | string) {
 }
 
 /**
- * The day the email came in plus a coloured age pill, e.g. "Sep 17 [10d]".
+ * The day the email came in plus a coloured age pill, e.g. "Sep 17, 2026 [10d]".
  */
 export function AgeBadge({
   since,
@@ -34,21 +34,13 @@ export function AgeBadge({
   showDate?: boolean;
   className?: string;
 }) {
-  const d = new Date(since);
-  const sameYear = d.getFullYear() === new Date().getFullYear();
   return (
     <span
       className={cn("inline-flex shrink-0 items-center gap-1.5 text-xs", className)}
-      title={`Came in ${d.toLocaleString()}`}
+      title={`Came in ${dateTime(since)}`}
     >
       {showDate && (
-        <span className="text-[var(--muted-foreground)]">
-          {d.toLocaleDateString(undefined, {
-            month: "short",
-            day: "numeric",
-            ...(sameYear ? {} : { year: "2-digit" }),
-          })}
-        </span>
+        <span className="whitespace-nowrap text-[var(--muted-foreground)]">{shortDate(since)}</span>
       )}
       <span
         className={cn(
