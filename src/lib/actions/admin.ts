@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
 import { requireAdmin, requireGmailOwner } from "@/lib/auth";
 import { slugify } from "@/lib/utils";
+import { isTagColor } from "@/lib/tag-colors";
 import { startWatch } from "@/lib/gmail/sync";
 import { backfillBatch, backfillQuery, type BackfillBatch } from "@/lib/gmail/backfill";
 import type { ActionState } from "./tickets";
@@ -106,25 +107,44 @@ export async function deleteTeam(
 
 /* ------------------------------------------------------------------ tags */
 
-const TAG_COLORS = ["slate", "blue", "green", "amber", "rose", "violet"] as const;
-
-export async function createTag(
-  _prev: ActionState,
-  form: FormData,
-): Promise<ActionState> {
+/**
+ * Create (no id) or update a tag. The slug is what ?tag= links use; it
+ * defaults to one made from the name and must be unique.
+ */
+export async function saveTag(input: {
+  id?: string;
+  name: string;
+  slug?: string;
+  color: string;
+}): Promise<ActionState> {
   await requireAdmin();
-  const name = String(form.get("name") ?? "").trim();
-  const color = String(form.get("color") ?? "slate");
+  const name = input.name.trim();
+  const slug = slugify(input.slug?.trim() || name);
   if (!name) return { error: "A name is required" };
-  if (!TAG_COLORS.includes(color as (typeof TAG_COLORS)[number])) {
-    return { error: "Unknown colour" };
+  if (!slug) return { error: "The slug needs at least one letter or number" };
+  if (!isTagColor(input.color)) return { error: "Unknown colour" };
+
+  const [clash] = await db
+    .select({ id: tags.id })
+    .from(tags)
+    .where(and(eq(tags.slug, slug), input.id ? ne(tags.id, input.id) : undefined))
+    .limit(1);
+  if (clash) return { error: `Another tag already uses the slug "${slug}"` };
+
+  if (input.id) {
+    const updated = await db
+      .update(tags)
+      .set({ name, slug, color: input.color })
+      .where(eq(tags.id, input.id))
+      .returning({ id: tags.id });
+    if (!updated.length) return { error: "Tag not found" };
+  } else {
+    await db.insert(tags).values({ name, slug, color: input.color });
   }
-  await db
-    .insert(tags)
-    .values({ name, slug: slugify(name), color })
-    .onConflictDoNothing();
-  revalidatePath("/admin/tags");
-  return { ok: `Created ${name}` };
+
+  // Tag names, colours and slugs show in the sidebar and on every list.
+  revalidatePath("/", "layout");
+  return { ok: input.id ? `Saved ${name}` : `Created ${name}` };
 }
 
 export async function deleteTag(
@@ -133,7 +153,7 @@ export async function deleteTag(
 ): Promise<ActionState> {
   await requireAdmin();
   await db.delete(tags).where(eq(tags.id, String(form.get("id"))));
-  revalidatePath("/admin/tags");
+  revalidatePath("/", "layout");
   return { ok: "Tag deleted" };
 }
 

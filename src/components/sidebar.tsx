@@ -14,6 +14,7 @@ import {
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TagDot } from "@/components/ui/badge";
 
 type Counts = {
   all: number;
@@ -47,7 +48,7 @@ export function Sidebar({
 }: {
   counts: Counts;
   teams: { name: string; slug: string }[];
-  tags: { name: string; slug: string }[];
+  tags: { name: string; slug: string; color: string }[];
   isAdmin: boolean;
   canManageGmail: boolean;
 }) {
@@ -108,19 +109,30 @@ export function Sidebar({
 
       {tags.length > 0 && (
         <div className="flex flex-col gap-0.5">
-          <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-            Tags
-          </p>
+          <div className="flex items-center px-2 pb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+              Tags
+            </p>
+            {isAdmin && (
+              <Link
+                href="/admin/tags"
+                className="ml-auto text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline"
+              >
+                Edit
+              </Link>
+            )}
+          </div>
           {tags.map((t) => (
             <Link
               key={t.slug}
               href={`/tickets?tag=${t.slug}`}
               className={cn(
-                "truncate rounded-md px-2 py-1.5 hover:bg-[var(--accent)]",
+                "flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-[var(--accent)]",
                 tag === t.slug && "bg-[var(--accent)] font-medium",
               )}
             >
-              {t.name}
+              <TagDot color={t.color} className="ml-1" />
+              <span className="truncate">{t.name}</span>
             </Link>
           ))}
         </div>

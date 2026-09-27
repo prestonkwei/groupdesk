@@ -45,7 +45,7 @@ export default async function PortalLayout({
           <Sidebar
             counts={counts}
             teams={teams.map((t) => ({ name: t.name, slug: t.slug }))}
-            tags={tags.map((t) => ({ name: t.name, slug: t.slug }))}
+            tags={tags.map((t) => ({ name: t.name, slug: t.slug, color: t.color }))}
             isAdmin={agent.role === "admin"}
             canManageGmail={canManageGmail(agent)}
           />
