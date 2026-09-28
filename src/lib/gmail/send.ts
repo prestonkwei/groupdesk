@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { messages, tickets, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
 import { taggedSubject } from "@/lib/ticket-subject";
-import { TIME_ZONE } from "@/lib/utils";
+import { TEAM_NAME, TIME_ZONE } from "@/lib/utils";
 import { gmailFor } from "./client";
 
 export type SentReply = {
@@ -63,7 +63,7 @@ export async function sendReply(args: {
     msg.setHeader("References", references.join(" "));
   }
 
-  const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\nhelpdesk\n`;
+  const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\n${TEAM_NAME}\n`;
   const quote = last ? quoteOf(last) : null;
   msg.addMessage({
     contentType: "text/plain",
@@ -78,7 +78,7 @@ export async function sendReply(args: {
     : escapeHtml(args.bodyText.trim()).replace(/\n/g, "<br>");
   const html =
     `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.4;color:#1f2328">${content}` +
-    `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>helpdesk</p></div>` +
+    `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>${TEAM_NAME}</p></div>` +
     (quote?.html ?? "");
   msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
 

@@ -27,7 +27,7 @@ function page(body: string, status = 200) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>helpdesk feedback</title>
+<title>Support Team feedback</title>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f6f7f9;font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:#1f2328}
@@ -59,7 +59,7 @@ function page(body: string, status = 200) {
   });
 }
 
-const NOT_FOUND = `<h1>Link not found</h1><p>This feedback link has expired or isn't valid. If you still need help, just reply to the email from helpdesk.</p>`;
+const NOT_FOUND = `<h1>Link not found</h1><p>This feedback link has expired or isn't valid. If you still need help, just reply to the email from the Support Team.</p>`;
 
 function form(opts: {
   token: string;
@@ -77,7 +77,7 @@ function form(opts: {
   return `
 <h1>Thanks for your feedback!</h1>
 <p>About ticket #${opts.number}: ${esc(opts.subject)}</p>
-${opts.sent ? `<div class="ok">Got it, thank you. Your comment went to the helpdesk.</div>` : ""}
+${opts.sent ? `<div class="ok">Got it, thank you. Your comment went to the Support Team.</div>` : ""}
 <form method="post" action="${action}">
   <div class="choices">${radio("good", "👍", "Good")}${radio("bad", "👎", "Not good")}</div>
   <label for="comment" class="muted" style="display:block;margin-bottom:6px">Leave a comment if you'd like (optional)</label>

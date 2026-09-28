@@ -17,6 +17,7 @@ import { notifyCsat } from "@/lib/notify";
 import { env } from "@/lib/env";
 import { sendTicketNotice } from "@/lib/gmail/send";
 import { firstNameOf } from "@/lib/template-vars";
+import { TEAM_NAME } from "@/lib/utils";
 
 /** Solved tickets with no email in this long get no survey (bulk clean-ups of old mail). */
 const MAX_AGE_DAYS = 30;
@@ -82,7 +83,7 @@ async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | nu
 <div><br></div>
 <div>Please let us know how we did:</div>
 <div style="margin:12px 0 4px">${button("good", "👍", "Good")}${button("bad", "👎", "Not good")}</div>
-<p style="margin-top:16px;color:#6b7280">--<br>helpdesk</p>
+<p style="margin-top:16px;color:#6b7280">--<br>${TEAM_NAME}</p>
 </div>`;
   const text = [
     hi,
@@ -94,11 +95,11 @@ async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | nu
     `👎 Not good: ${link("bad")}`,
     "",
     "--",
-    "helpdesk",
+    TEAM_NAME,
   ].join("\n");
 
   // Recorded only once it's sent, so a failed send can be retried by solving again.
-  await sendTicketNotice({ ticket, kind: "csat", fromName: solvedBy?.name ?? "helpdesk", html, text });
+  await sendTicketNotice({ ticket, kind: "csat", fromName: solvedBy?.name ?? TEAM_NAME, html, text });
   await db.insert(csatSurveys).values({
     ticketId: ticket.id,
     token,

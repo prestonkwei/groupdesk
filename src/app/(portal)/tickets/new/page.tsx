@@ -46,7 +46,7 @@ export default async function NewMessagePage({
           fromName={agent.name}
           fromEmail={env.groupEmail}
           defaultTo={to && to.includes("@") ? [to.toLowerCase()] : []}
-          defaultCc={[env.groupEmail.toLowerCase()]}
+          defaultCc={[]}
           contacts={[...contacts.values()].map((c) => ({ ...c, photo: photos[c.email] ?? null }))}
           templates={templateList.map((t) => ({ id: t.id, name: t.name, bodyHtml: t.bodyHtml }))}
         />

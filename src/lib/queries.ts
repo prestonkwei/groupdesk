@@ -467,7 +467,9 @@ export function replyRecipients(
 
   return {
     to: [requester],
-    cc: [own.group.toLowerCase(), ...new Set(others)],
+    // The group isn't copied: the reply is From it, requesters answer to it,
+    // and the portal records the sent message itself.
+    cc: [...new Set(others)],
   };
 }
 
