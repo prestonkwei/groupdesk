@@ -49,6 +49,10 @@ function describe(e: ThreadEvent): string {
         : `${who} added ${d.tagName}`;
     case "tag_removed":
       return `${who} removed ${d.tagName}`;
+    case "csat_sent":
+      return `Satisfaction survey emailed to ${d.to}`;
+    case "csat":
+      return `${d.by ?? "The requester"} rated this ${d.rating === "good" ? "👍" : "👎"}${d.comment ? `: “${d.comment}”` : ""}`;
     default:
       return `${who} · ${e.kind}`;
   }

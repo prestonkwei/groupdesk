@@ -90,13 +90,18 @@ export default async function ReportsPage({
               : ""}
         </p>
 
-        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
           <Tile label="Came in" value={o.tickets.toLocaleString()} />
           <Tile label="Resolved" value={o.resolved.toLocaleString()} sub={o.tickets ? `${Math.round((o.resolved / o.tickets) * 100)}%` : undefined} />
           <Tile label="Still open" value={o.open.toLocaleString()} />
           <Tile label="Median first response" value={duration(o.medianFirstResponse)} sub={`${o.responded} answered`} />
           <Tile label="Median time to resolve" value={duration(o.medianResolve)} />
           <Tile label="Answered within target" value={pct(o.withinTarget, o.responded)} sub="P0 2h · P1 4h · P2 1d · P3 2d" />
+          <Tile
+            label="Satisfaction"
+            value={pct(o.csatGood, o.csatGood + o.csatBad)}
+            sub={`${o.csatGood} 👍 · ${o.csatBad} 👎 · ${pct(o.csatGood + o.csatBad, o.surveyed)} answered`}
+          />
         </dl>
 
         <section className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
@@ -109,6 +114,36 @@ export default async function ReportsPage({
         <BreakdownTable title="By team" rows={report.byTeam} />
         <BreakdownTable title="By tag" rows={report.byTag} tags />
         <BreakdownTable title="By agent" rows={report.byAgent} note="Tickets assigned to them; a ticket with two assignees counts for both." />
+
+        <section className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
+          <div className="px-4 pt-4">
+            <h2 className="text-sm font-semibold">Recent feedback</h2>
+            <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">
+              Requesters get a 👍/👎 survey when their ticket is solved. Newest answers first.
+            </p>
+          </div>
+          {report.feedback.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">No answers in this range yet.</p>
+          ) : (
+            <ul className="mt-2">
+              {report.feedback.map((f) => (
+                <li key={`${f.number}-${f.responded_at}`} className="flex gap-3 border-t border-[var(--border)] px-4 py-2.5 text-sm">
+                  <span className="text-lg leading-6">{f.rating === "good" ? "👍" : "👎"}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <Link href={`/tickets/${f.number}`} className="min-w-0 truncate font-medium hover:underline">
+                        #{f.number} {f.subject}
+                      </Link>
+                      <span className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]">{shortDate(f.respondedAt)}</span>
+                    </div>
+                    <p className="truncate text-xs text-[var(--muted-foreground)]">{f.requester}</p>
+                    {f.comment && <p className="mt-1 whitespace-pre-wrap break-words">{f.comment}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         <section className="flex flex-wrap items-center gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-4">
           <div className="min-w-0 flex-1">
@@ -171,7 +206,7 @@ function BreakdownTable({
         <p className="px-4 py-6 text-sm text-[var(--muted-foreground)]">Nothing in this range.</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="mt-2 w-full min-w-[640px] text-sm">
+          <table className="mt-2 w-full min-w-[720px] text-sm">
             <thead className="text-xs text-[var(--muted-foreground)]">
               <tr className="border-b border-[var(--border)]">
                 <th className="px-4 py-2 text-left font-medium">Name</th>
@@ -181,6 +216,7 @@ function BreakdownTable({
                 <th className="px-4 py-2 text-right font-medium">Median first response</th>
                 <th className="px-4 py-2 text-right font-medium">Median to resolve</th>
                 <th className="px-4 py-2 text-right font-medium">Within target</th>
+                <th className="px-4 py-2 text-right font-medium">Satisfaction</th>
               </tr>
             </thead>
             <tbody>
@@ -198,6 +234,12 @@ function BreakdownTable({
                   <td className="px-4 py-2 text-right tabular-nums">{duration(r.medianFirstResponse)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{duration(r.medianResolve)}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{pct(r.withinTarget, r.responded)}</td>
+                  <td
+                    className="px-4 py-2 text-right tabular-nums"
+                    title={`${r.csatGood} 👍 · ${r.csatBad} 👎`}
+                  >
+                    {pct(r.csatGood, r.csatGood + r.csatBad)}
+                  </td>
                 </tr>
               ))}
             </tbody>

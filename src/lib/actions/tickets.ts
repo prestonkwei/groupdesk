@@ -24,6 +24,7 @@ import { listTickets, type TicketFilters } from "@/lib/queries";
 import { photosFor } from "@/lib/people";
 import { emailHtml, sendReply } from "@/lib/gmail/send";
 import { env } from "@/lib/env";
+import { sendCsatSurveys } from "@/lib/csat";
 
 export type ActionState = { ok?: string; error?: string };
 
@@ -125,6 +126,7 @@ export async function setStatus(
     kind: "status",
     data: { from: ticket.status, to: status },
   });
+  if (status === "solved") after(() => sendCsatSurveys([ticketId], agent));
 
   refresh(ticket.number);
   return { ok: `Status set to ${status}` };
@@ -450,6 +452,10 @@ export async function bulkUpdate(ticketIds: string[], op: BulkOp): Promise<Actio
           data: { from: r.from, to: value },
         })),
       );
+    }
+    if (op.kind === "status" && op.status === "solved" && changed.length) {
+      const solved = changed;
+      after(() => sendCsatSurveys(solved, agent));
     }
     label = `${op.kind === "status" ? "Status" : "Priority"} set to ${op.kind === "priority" && value !== "none" ? value.toUpperCase() : value}`;
   } else if (op.kind === "team") {

@@ -117,3 +117,22 @@ export async function notifyMentions(ticket: TicketRef, noteText: string, author
     );
   }
 }
+
+/** The requester rated a solved ticket 👎 or left a comment: tell its assignees and the solver. */
+export async function notifyCsat(
+  ticket: TicketRef,
+  agentIds: string[],
+  from: string,
+  rating: "good" | "bad",
+  comment: string | null,
+) {
+  for (const to of await recipients(agentIds)) {
+    await send(
+      to,
+      `${rating === "good" ? "👍" : "👎"} Feedback on #${ticket.number}: ${ticket.subject}`,
+      `<strong>${esc(from)}</strong> rated a ticket you worked on ${rating === "good" ? "👍" : "👎"}${comment ? " and left a comment" : ""}:`,
+      [ticket],
+      comment?.slice(0, 1000),
+    );
+  }
+}

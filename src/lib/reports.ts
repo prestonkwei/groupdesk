@@ -24,6 +24,9 @@ type TicketRow = {
   first_in: Date | null;
   first_out: Date | null;
   resolved_at: Date | null;
+  /** Latest survey answer for the ticket: good | bad. */
+  csat: string | null;
+  surveyed: boolean;
 };
 
 export type Stat = {
@@ -36,6 +39,10 @@ export type Stat = {
   responded: number;
   /** Answered within the priority's reply target (school hours). */
   withinTarget: number;
+  /** Satisfaction survey: tickets surveyed, and answers (latest per ticket). */
+  surveyed: number;
+  csatGood: number;
+  csatBad: number;
 };
 
 export type Breakdown = { key: string; label: string; color?: string } & Stat;
@@ -66,6 +73,9 @@ function stats(rows: TicketRow[]): Stat {
     withinTarget: answered.filter(
       (x) => x.s <= (SLA_TARGET_HOURS[x.r.priority] ?? SLA_TARGET_HOURS.none) * 3600,
     ).length,
+    surveyed: rows.filter((r) => r.surveyed).length,
+    csatGood: rows.filter((r) => r.csat === "good").length,
+    csatBad: rows.filter((r) => r.csat === "bad").length,
   };
 }
 
@@ -119,12 +129,20 @@ export async function buildReport(range: ReportRange, includeImported: boolean) 
         from events e join t on t.id = e.ticket_id
        where e.kind = 'status' and e.data->>'to' = 'solved'
        group by e.ticket_id
+    ),
+    cs as (
+      select c.ticket_id,
+             (array_agg(c.rating order by c.responded_at desc) filter (where c.rating is not null))[1] as rating
+        from csat_surveys c join t on t.id = c.ticket_id
+       group by c.ticket_id
     )
-    select t.*, fi.at as first_in, fo.at as first_out, res.at as resolved_at
+    select t.*, fi.at as first_in, fo.at as first_out, res.at as resolved_at,
+           cs.rating as csat, (cs.ticket_id is not null) as surveyed
       from t
       left join fi on fi.ticket_id = t.id
       left join fo on fo.ticket_id = t.id
       left join res on res.ticket_id = t.id
+      left join cs on cs.ticket_id = t.id
   `);
 
   // The driver hands timestamps back as strings on raw queries.
@@ -209,9 +227,28 @@ export async function buildReport(range: ReportRange, includeImported: boolean) 
         ).rows[0]?.n ?? 0,
       );
 
+  // Latest answers for the feedback list: anything answered in the range.
+  const { rows: feedback } = await db.execute<{
+    number: number;
+    subject: string;
+    requester: string;
+    rating: string;
+    comment: string | null;
+    responded_at: string;
+  }>(sql`
+    select tk.number, tk.subject, coalesce(tk.requester_name, c.requester_email) as requester,
+           c.rating, c.comment, c.responded_at
+      from csat_surveys c
+      join tickets tk on tk.id = c.ticket_id
+     where c.rating is not null and c.responded_at >= ${from}
+     order by c.responded_at desc
+     limit 25
+  `);
+
   return {
     from,
     weekly,
+    feedback: feedback.map((f) => ({ ...f, respondedAt: new Date(f.responded_at) })),
     overall: stats(tickets),
     byTeam: group(teamList),
     byTag: group(tagRows.rows),

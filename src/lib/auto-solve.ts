@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, inArray, lt } from "drizzle-orm";
 import { db } from "@/db";
 import { events, tickets } from "@/db/schema";
+import { sendCsatSurveys } from "@/lib/csat";
 
 /** Days a pending ticket waits for the requester before it's marked solved. */
 export const AUTO_SOLVE_DAYS = Number(process.env.AUTO_SOLVE_DAYS) || 7;
@@ -35,5 +36,6 @@ export async function autoSolveStale(): Promise<{ solved: number }> {
       })),
     );
   });
+  await sendCsatSurveys(ids, null);
   return { solved: ids.length };
 }

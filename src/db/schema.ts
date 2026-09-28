@@ -252,6 +252,30 @@ export const attachments = pgTable(
 
 /* ------------------------------------------------------------------ events */
 
+/**
+ * Satisfaction survey emailed when a ticket is solved. One row per email; the
+ * token in its 👍/👎 links is the only credential the requester needs.
+ */
+export const csatSurveys = pgTable(
+  "csat_surveys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    token: text("token").notNull().unique(),
+    requesterEmail: text("requester_email").notNull(),
+    /** Who solved it (null for auto-solve). */
+    agentId: uuid("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** good | bad; null until they click. */
+    rating: text("rating"),
+    comment: text("comment"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    respondedAt: timestamp("responded_at", { withTimezone: true }),
+  },
+  (t) => [index("csat_ticket_idx").on(t.ticketId, t.sentAt)],
+);
+
 export const events = pgTable(
   "events",
   {
@@ -262,7 +286,7 @@ export const events = pgTable(
     actorAgentId: uuid("actor_agent_id").references(() => agents.id, {
       onDelete: "set null",
     }),
-    /** assigned | unassigned | status | team | tag_added | tag_removed | created | reopened */
+    /** assigned | unassigned | status | team | tag_added | tag_removed | created | reopened | csat_sent | csat | … */
     kind: text("kind").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true })

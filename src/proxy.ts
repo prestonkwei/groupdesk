@@ -5,10 +5,11 @@ import { readAccessToken, verifyAccessToken } from "@/lib/access-jwt";
  * Routes that authenticate themselves and must not be gated on an Access JWT:
  *   /api/gmail/push  -> Pub/Sub OIDC token
  *   /api/cron/*      -> CRON_SECRET (or Vercel's cron header)
+ *   /csat/*          -> the survey token in the URL (requesters aren't agents)
  * Cloudflare Access needs matching Bypass policies; this is the app-side half,
  * so the *.vercel.app URL behaves the same way. (Next 16 calls this file `proxy`.)
  */
-const SELF_AUTHENTICATED = [/^\/api\/gmail\/push$/, /^\/api\/cron\//];
+const SELF_AUTHENTICATED = [/^\/api\/gmail\/push$/, /^\/api\/cron\//, /^\/csat\//];
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

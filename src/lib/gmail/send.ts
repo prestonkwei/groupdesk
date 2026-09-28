@@ -39,30 +39,8 @@ export async function sendReply(args: {
     .limit(1);
   if (!ticket) throw new Error("Ticket not found");
 
-  /*
-   * Thread onto the latest email in the ticket (inbound or ours), whatever its
-   * subject: In-Reply-To/References plus the Gmail threadId keep the reply in
-   * the requester's existing conversation, and the tagged subject still lets
-   * ingest file any answer on this ticket.
-   */
-  const [last] = await db
-    .select()
-    .from(messages)
-    .where(and(eq(messages.ticketId, ticket.id), isNotNull(messages.rfcMessageId)))
-    .orderBy(desc(messages.sentAt))
-    .limit(1);
-
   const { client } = await gmailFor();
-
-  // Keep our own mailbox's copy in the same conversation too.
-  let threadId: string | undefined;
-  if (last?.gmailMessageId) {
-    const { data } = await client.users.messages
-      .get({ userId: "me", id: last.gmailMessageId, format: "minimal" })
-      .catch(() => ({ data: { threadId: undefined as string | null | undefined } }));
-    threadId = data.threadId ?? undefined;
-  }
-  threadId ??= ticket.gmailThreadId ?? undefined;
+  const { last, threadId, references } = await threadingFor(client, ticket);
 
   const subject = taggedSubject(ticket.number, ticket.subject);
 
@@ -77,11 +55,6 @@ export async function sendReply(args: {
   if (args.cc.length) msg.setCc(args.cc);
   if (args.bcc.length) msg.setBcc(args.bcc);
   msg.setSubject(subject);
-
-  const references = [
-    ...(last?.references ?? []),
-    ...(last?.rfcMessageId ? [last.rfcMessageId] : []),
-  ].slice(-20);
 
   if (last?.rfcMessageId) {
     msg.setHeader("In-Reply-To", last.rfcMessageId);
@@ -214,6 +187,74 @@ export function emailHtml(html: string) {
     .replace(/<p(\s[^>]*)?>/gi, "<div$1>")
     .replace(/<\/p>/gi, "</div>")
     .replace(/<(ul|ol|blockquote)>/gi, '<$1 style="margin:0">');
+}
+
+/*
+ * Thread onto the latest email in the ticket (inbound or ours), whatever its
+ * subject: In-Reply-To/References plus the Gmail threadId keep the email in
+ * the requester's existing conversation, and the tagged subject still lets
+ * ingest file any answer on this ticket.
+ */
+async function threadingFor(
+  client: Awaited<ReturnType<typeof gmailFor>>["client"],
+  ticket: typeof tickets.$inferSelect,
+) {
+  const [last] = await db
+    .select()
+    .from(messages)
+    .where(and(eq(messages.ticketId, ticket.id), isNotNull(messages.rfcMessageId)))
+    .orderBy(desc(messages.sentAt))
+    .limit(1);
+
+  // Keep our own mailbox's copy in the same conversation too.
+  let threadId: string | undefined;
+  if (last?.gmailMessageId) {
+    const { data } = await client.users.messages
+      .get({ userId: "me", id: last.gmailMessageId, format: "minimal" })
+      .catch(() => ({ data: { threadId: undefined as string | null | undefined } }));
+    threadId = data.threadId ?? undefined;
+  }
+  threadId ??= ticket.gmailThreadId ?? undefined;
+
+  const references = [
+    ...(last?.references ?? []),
+    ...(last?.rfcMessageId ? [last.rfcMessageId] : []),
+  ].slice(-20);
+
+  return { last: last ?? null, threadId, references };
+}
+
+/** Header on automated ticket emails (the CSAT survey) so ingest skips their echo. */
+export const AUTO_KIND_HEADER = "X-Ticket-Kind";
+
+/**
+ * An automated email on a ticket's conversation (the satisfaction survey):
+ * threaded like a reply, so answering it lands on the ticket, but not stored
+ * as a message, so it never counts as a response in reports or SLA.
+ */
+export async function sendTicketNotice(args: {
+  ticket: typeof tickets.$inferSelect;
+  kind: string;
+  fromName: string;
+  html: string;
+  text: string;
+}) {
+  const { client } = await gmailFor();
+  const { last, threadId, references } = await threadingFor(client, args.ticket);
+  const msg = createMimeMessage();
+  msg.setSender({ name: args.fromName, addr: env.groupEmail });
+  msg.setTo(args.ticket.requesterEmail);
+  msg.setSubject(taggedSubject(args.ticket.number, args.ticket.subject));
+  if (last?.rfcMessageId) msg.setHeader("In-Reply-To", last.rfcMessageId);
+  if (references.length) msg.setHeader("References", references.join(" "));
+  msg.setHeader(AUTO_KIND_HEADER, args.kind);
+  // Keeps out-of-office replies away; a person's reply still comes through.
+  msg.setHeader("Auto-Submitted", "auto-generated");
+  msg.setHeader("X-Auto-Response-Suppress", "All");
+  msg.addMessage({ contentType: "text/plain", encoding: "base64", data: base64Lines(args.text) });
+  msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(args.html) });
+  const raw = Buffer.from(msg.asRaw()).toString("base64url");
+  await client.users.messages.send({ userId: "me", requestBody: { raw, threadId } });
 }
 
 /** Base64 in 76-character lines, so non-ASCII text and long HTML lines survive transit. */

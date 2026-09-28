@@ -14,6 +14,7 @@ import {
 } from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
+import { AUTO_KIND_HEADER } from "./send";
 import { notifyReply } from "@/lib/notify";
 import { isDigestSubject, stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
 import { flagVipIfFaculty } from "@/lib/vip";
@@ -215,6 +216,11 @@ export async function ingestParsedEmail(input: {
   // Replies to the weekly digest (sent from the group address) aren't requests.
   if (isDigestSubject(subject)) {
     return { status: "skipped", reason: "reply to the weekly digest" };
+  }
+
+  // Our automated ticket emails (the CSAT survey) coming back through the group.
+  if (headerValue(parsed, AUTO_KIND_HEADER.toLowerCase())) {
+    return { status: "skipped", reason: "echo of an automated ticket email" };
   }
 
   // Our own outbound copy coming back around through the group.
