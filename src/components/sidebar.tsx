@@ -11,6 +11,7 @@ import {
   Tags,
   Mail,
   UserCog,
+  Contact,
   Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const ADMIN = [
   { href: "/admin/agents", label: "Agents", icon: UserCog },
   { href: "/admin/teams", label: "Teams", icon: Users },
   { href: "/admin/tags", label: "Tags", icon: Tags },
+  { href: "/admin/people", label: "People", icon: Contact },
   { href: "/admin/gmail", label: "Gmail", icon: Mail },
 ] as const;
 

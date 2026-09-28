@@ -10,6 +10,7 @@ import { isTagColor } from "@/lib/tag-colors";
 import { startWatch } from "@/lib/gmail/sync";
 import { backfillBatch, backfillQuery, type BackfillBatch } from "@/lib/gmail/backfill";
 import type { ActionState } from "./tickets";
+import { recacheEveryone } from "@/lib/people";
 
 export type { ActionState };
 
@@ -155,6 +156,24 @@ export async function deleteTag(
   await db.delete(tags).where(eq(tags.id, String(form.get("id"))));
   revalidatePath("/", "layout");
   return { ok: "Tag deleted" };
+}
+
+/* ---------------------------------------------------------------- people */
+
+/** Runs up to ~4 minutes; /admin/people sets maxDuration = 300. */
+export async function recachePeople(): Promise<ActionState> {
+  await requireAdmin();
+  try {
+    const r = await recacheEveryone();
+    revalidatePath("/admin/people");
+    revalidatePath("/tickets");
+    const parts = [`Refreshed ${r.refreshed} of ${r.total}`];
+    if (r.failed) parts.push(`${r.failed} failed`);
+    if (r.remaining) parts.push(`${r.remaining} left, press again to continue`);
+    return r.failed && !r.refreshed ? { error: parts.join(" · ") } : { ok: parts.join(" · ") };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /* ----------------------------------------------------------------- gmail */
