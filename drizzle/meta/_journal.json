@@ -43,6 +43,13 @@
       "when": 1790550756513,
       "tag": "0005_notify_views_spam_merge",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790573611602,
+      "tag": "0006_inline_images",
+      "breakpoints": true
     }
   ]
 }

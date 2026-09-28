@@ -131,7 +131,7 @@ export function RichEditor({
     editorProps: {
       attributes: {
         class:
-          "rich-editor min-h-28 max-h-[45vh] overflow-y-auto px-3 py-2.5 text-[15px] leading-relaxed outline-none",
+          "rich-editor min-h-28 max-h-[45vh] overflow-y-auto px-3 py-2.5 text-[15px] leading-normal outline-none",
       },
       handleKeyDown: (_view, event) => {
         const { slash: s, matches: list } = live.current;
@@ -172,7 +172,7 @@ export function RichEditor({
     onUpdate: ({ editor }) => {
       onChange({
         html: editor.getHTML(),
-        text: editor.getText({ blockSeparator: "\n\n" }),
+        text: editor.getText({ blockSeparator: "\n" }),
         empty: editor.isEmpty,
       });
       detectSlash(editor);

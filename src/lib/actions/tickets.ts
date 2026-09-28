@@ -22,7 +22,7 @@ import {
 import { requireAgent } from "@/lib/auth";
 import { listTickets, type TicketFilters } from "@/lib/queries";
 import { photosFor } from "@/lib/people";
-import { sendReply } from "@/lib/gmail/send";
+import { emailHtml, sendReply } from "@/lib/gmail/send";
 import { env } from "@/lib/env";
 
 export type ActionState = { ok?: string; error?: string };
@@ -725,7 +725,8 @@ export async function addNote(
   const { agent } = await requireAgent();
   const ticketId = String(form.get("ticketId"));
   const body = String(form.get("body") ?? "").trim();
-  const bodyHtml = String(form.get("bodyHtml") ?? "").trim() || null;
+  const rawHtml = String(form.get("bodyHtml") ?? "").trim();
+  const bodyHtml = rawHtml ? emailHtml(rawHtml) : null;
   if (!body) return { error: "Write something first" };
 
   const ticket = await ticketOr404(ticketId);

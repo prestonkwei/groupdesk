@@ -101,10 +101,10 @@ export async function sendReply(args: {
   // Always send HTML so the quoted history renders (and collapses) like a
   // normal Gmail reply. The portal hides .gmail_quote the same way.
   const content = args.bodyHtml
-    ? cleanHtml(args.bodyHtml)
+    ? emailHtml(args.bodyHtml)
     : escapeHtml(args.bodyText.trim()).replace(/\n/g, "<br>");
   const html =
-    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2328">${content}` +
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.4;color:#1f2328">${content}` +
     `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>helpdesk</p></div>` +
     (quote?.html ?? "");
   msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
@@ -201,6 +201,19 @@ function quoteOf(m: QuotedMessage) {
     `<br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">${escapeHtml(attribution)}<br></div>` +
     `<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${inner}</blockquote></div>`;
   return { text, html };
+}
+
+/**
+ * Composer HTML as Gmail writes it: each Enter is a new line with no gap
+ * (a <div>), and an empty line is a visible blank line. Plain <p> tags would
+ * get a full line of margin in every mail client, and empty ones collapse.
+ */
+export function emailHtml(html: string) {
+  return cleanHtml(html)
+    .replace(/<p>\s*(<br\s*\/?>)?\s*<\/p>/gi, "<div><br></div>")
+    .replace(/<p(\s[^>]*)?>/gi, "<div$1>")
+    .replace(/<\/p>/gi, "</div>")
+    .replace(/<(ul|ol|blockquote)>/gi, '<$1 style="margin:0">');
 }
 
 /** Base64 in 76-character lines, so non-ASCII text and long HTML lines survive transit. */

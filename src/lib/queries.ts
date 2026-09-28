@@ -358,6 +358,43 @@ export async function neighbours(ticket: { lastMessageAt: Date; id: string }) {
   return { newer: newer?.number ?? null, older: older?.number ?? null };
 }
 
+type Attachment = typeof attachments.$inferSelect;
+
+/**
+ * Point the body's cid: references at our attachment route so pasted and
+ * inline images render in place, and leave only the real attachments to list
+ * below the message. Attachments stored before Content-IDs were recorded are
+ * matched by filename, then in order, which is how mail clients number them.
+ */
+function inlineImages(html: string | null, atts: Attachment[]) {
+  if (!html || !atts.length || !/cid:/i.test(html)) return { html, rest: atts };
+  const used = new Set<string>();
+  const byCid = new Map(
+    atts.filter((a) => a.contentId).map((a) => [a.contentId!.toLowerCase(), a]),
+  );
+  const legacy = atts.filter((a) => !a.contentId && a.contentType?.startsWith("image/"));
+
+  const out = html.replace(/cid:([^"'\s)>]+)/gi, (whole, raw: string) => {
+    let cid = raw;
+    try {
+      cid = decodeURIComponent(raw);
+    } catch {}
+    const key = cid.toLowerCase();
+    let att = byCid.get(key);
+    if (!att) {
+      const name = key.split("@")[0];
+      att =
+        legacy.find((a) => !used.has(a.id) && a.filename.toLowerCase() === name) ??
+        legacy.find((a) => !used.has(a.id));
+      if (att) byCid.set(key, att);
+    }
+    if (!att) return whole;
+    used.add(att.id);
+    return `/api/attachments/${att.id}`;
+  });
+  return { html: out, rest: atts.filter((a) => !used.has(a.id)) };
+}
+
 export async function getThread(ticketId: string) {
   const rows = await db
     .select({
@@ -393,12 +430,16 @@ export async function getThread(ticketId: string) {
     .orderBy(asc(events.createdAt));
 
   return {
-    messages: rows.map((r) => ({
-      ...r.message,
-      authorName: r.authorName,
-      authorEmail: r.authorEmail,
-      attachments: byMessage.get(r.message.id) ?? [],
-    })),
+    messages: rows.map((r) => {
+      const inlined = inlineImages(r.message.bodyHtml, byMessage.get(r.message.id) ?? []);
+      return {
+        ...r.message,
+        bodyHtml: inlined.html,
+        authorName: r.authorName,
+        authorEmail: r.authorEmail,
+        attachments: inlined.rest,
+      };
+    }),
     events: activity.map((a) => ({ ...a.event, actorName: a.actorName })),
   };
 }

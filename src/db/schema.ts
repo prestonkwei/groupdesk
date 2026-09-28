@@ -241,6 +241,8 @@ export const attachments = pgTable(
     contentType: text("content_type"),
     size: integer("size"),
     blobUrl: text("blob_url").notNull(),
+    /** Content-ID of an inline image, without angle brackets; the body refers to it as cid:… */
+    contentId: text("content_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

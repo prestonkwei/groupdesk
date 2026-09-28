@@ -536,6 +536,7 @@ async function storeAttachments(messageId: string, parsed: Email) {
         contentType: att.mimeType ?? null,
         size: body.byteLength,
         blobUrl: blob.url,
+        contentId: att.contentId?.replace(/^<|>$/g, "").trim() || null,
       });
     } catch (err) {
       console.error("attachment upload failed", err);
