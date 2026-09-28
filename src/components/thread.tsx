@@ -51,6 +51,10 @@ function describe(e: ThreadEvent): string {
       return `${who} removed ${d.tagName}`;
     case "csat_sent":
       return `Satisfaction survey emailed to ${d.to}`;
+    case "csat_skipped":
+      return `No satisfaction survey: ${d.reason}`;
+    case "csat_failed":
+      return `Satisfaction survey failed to send: ${d.error}`;
     case "csat":
       return `${d.by ?? "The requester"} rated this ${d.rating === "good" ? "👍" : "👎"}${d.comment ? `: “${d.comment}”` : ""}`;
     default:

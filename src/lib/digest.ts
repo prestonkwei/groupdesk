@@ -71,7 +71,7 @@ async function digestFor(agent: Agent) {
     .where(
       and(
         inArray(tickets.status, ["open", "pending"]),
-        sql`not exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id})`,
+        sql`not exists (select 1 from ticket_assignees ta where ta.ticket_id = "tickets"."id")`,
       ),
     );
 

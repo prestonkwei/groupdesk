@@ -55,15 +55,15 @@ export const SORTS: { value: TicketSort; label: string; defaultDir: "asc" | "des
  */
 const waitingSince = sql<Date | null>`case when ${tickets.status} = 'open' then (
   select min(m.sent_at) from messages m
-   where m.ticket_id = ${tickets.id} and m.direction = 'inbound'
+   where m.ticket_id = "tickets"."id" and m.direction = 'inbound'
      and m.sent_at > coalesce(
        (select max(o.sent_at) from messages o
-         where o.ticket_id = ${tickets.id} and o.direction = 'outbound'),
+         where o.ticket_id = "tickets"."id" and o.direction = 'outbound'),
        '-infinity'::timestamptz)
 ) end`;
 
 const priorityRank = sql`case ${tickets.priority} when 'p0' then 0 when 'p1' then 1 when 'p2' then 2 when 'p3' then 3 else 4 end`;
-const firstTagName = sql`(select min(g.name) from ticket_tags tt join tags g on g.id = tt.tag_id where tt.ticket_id = ${tickets.id})`;
+const firstTagName = sql`(select min(g.name) from ticket_tags tt join tags g on g.id = tt.tag_id where tt.ticket_id = "tickets"."id")`;
 
 function sortOrder(f: TicketFilters): SQL[] {
   const def = SORTS.find((s) => s.value === f.sort);
@@ -91,18 +91,18 @@ function sortOrder(f: TicketFilters): SQL[] {
 function starredBy(me: Agent) {
   return sql<boolean>`exists (
     select 1 from ticket_stars ts
-     where ts.ticket_id = ${tickets.id} and ts.agent_id = ${me.id}
+     where ts.ticket_id = "tickets"."id" and ts.agent_id = ${me.id}
   )`;
 }
 
 function hasAssignee() {
-  return sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id})`;
+  return sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = "tickets"."id")`;
 }
 
 function assignedTo(me: Agent) {
   return sql`exists (
     select 1 from ticket_assignees ta
-     where ta.ticket_id = ${tickets.id} and ta.agent_id = ${me.id}
+     where ta.ticket_id = "tickets"."id" and ta.agent_id = ${me.id}
   )`;
 }
 
@@ -130,7 +130,7 @@ function searchMatch(q: string): SQL {
     or ${requesterText} ilike ${like}
     or exists (
       select 1 from messages m
-       where m.ticket_id = ${tickets.id} and m.body_text ilike ${like}
+       where m.ticket_id = "tickets"."id" and m.body_text ilike ${like}
     )
     ${number ? sql`or ${tickets.number} = ${Number(number)}` : sql``}
   )`;
@@ -170,7 +170,7 @@ function filterClauses(f: TicketFilters, me: Agent): SQL[] {
   if (f.assignee === "me") where.push(assignedTo(me));
   else if (f.assignee === "none") where.push(sql`not ${hasAssignee()}`);
   else if (f.assignee && /^[0-9a-f-]{36}$/i.test(f.assignee)) {
-    where.push(sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id} and ta.agent_id = ${f.assignee})`);
+    where.push(sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = "tickets"."id" and ta.agent_id = ${f.assignee})`);
   }
   // Merged tickets live on inside the ticket they were merged into.
   where.push(sql`${tickets.mergedIntoId} is null`);
@@ -180,7 +180,7 @@ function filterClauses(f: TicketFilters, me: Agent): SQL[] {
     where.push(
       sql`exists (
         select 1 from ticket_tags tt join tags tg on tg.id = tt.tag_id
-         where tt.ticket_id = ${tickets.id} and tg.slug = ${f.tag}
+         where tt.ticket_id = "tickets"."id" and tg.slug = ${f.tag}
       )`,
     );
   }
@@ -219,7 +219,7 @@ export async function listTickets(
       teamSlug: teams.slug,
       messageCount: sql<number>`(
         select count(*)::int from messages m
-         where m.ticket_id = ${tickets.id} and m.direction <> 'note'
+         where m.ticket_id = "tickets"."id" and m.direction <> 'note'
       )`,
     })
     .from(tickets)

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, eq, gt, inArray, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { after } from "next/server";
 import {
@@ -28,41 +28,65 @@ function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+/** Add a line to the ticket's activity and bump updatedAt so open pages refresh. */
+async function note(ticketId: string, kind: string, data: Record<string, unknown>) {
+  await db.insert(events).values({ ticketId, kind, data });
+  await db.update(tickets).set({ updatedAt: new Date() }).where(eq(tickets.id, ticketId));
+}
+
 /**
  * Email the requester a 👍/👎 survey for each ticket that was just solved.
  * Skipped when we never replied, the last email is old, the requester is one
- * of us / an automated sender / blocked, or a survey went out very recently.
- * Failures are logged, never thrown: solving must not depend on email.
+ * of us / an automated sender / blocked, or a survey went out very recently;
+ * the reason shows in the ticket's activity. Failures are logged there too,
+ * never thrown: solving must not depend on email.
  */
 export async function sendCsatSurveys(ticketIds: string[], solvedBy: Agent | null) {
   if (!ticketIds.length || process.env.CSAT_DISABLED === "1") return;
 
   const since = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000);
   const recent = new Date(Date.now() - RESEND_AFTER_HOURS * 3_600_000);
+  // Subqueries name "tickets"."id" in full: in a single-table select Drizzle
+  // writes ${tickets.id} as a bare "id", which inside "from messages m" means m.id.
   const rows = await db
-    .select()
+    .select({
+      ticket: tickets,
+      replied: sql<boolean>`exists (select 1 from ${messages} m where m.ticket_id = "tickets"."id" and m.direction = 'outbound')`,
+      surveyedRecently: sql<boolean>`exists (select 1 from ${csatSurveys} c where c.ticket_id = "tickets"."id" and c.sent_at > ${recent})`,
+      isAgent: sql<boolean>`exists (select 1 from ${agents} a where lower(a.email) = lower("tickets"."requester_email"))`,
+      isBlocked: sql<boolean>`exists (select 1 from ${blockedSenders} b where lower(b.email) = lower("tickets"."requester_email"))`,
+    })
     .from(tickets)
-    .where(
-      and(
-        inArray(tickets.id, ticketIds),
-        eq(tickets.status, "solved"),
-        sql`${tickets.mergedIntoId} is null`,
-        gt(tickets.lastMessageAt, since),
-        sql`exists (select 1 from ${messages} m where m.ticket_id = ${tickets.id} and m.direction = 'outbound')`,
-        sql`not exists (select 1 from ${csatSurveys} c where c.ticket_id = ${tickets.id} and c.sent_at > ${recent})`,
-        sql`lower(${tickets.requesterEmail}) not in (select lower(${agents.email}) from ${agents})`,
-        sql`lower(${tickets.requesterEmail}) not in (select lower(${blockedSenders.email}) from ${blockedSenders})`,
-      ),
-    );
+    .where(inArray(tickets.id, ticketIds));
 
-  for (const ticket of rows) {
+  for (const { ticket, replied, surveyedRecently, isAgent, isBlocked } of rows) {
+    // Reopened (or merged) again before we got here: nothing to say.
+    if (ticket.status !== "solved" || ticket.mergedIntoId) continue;
     const email = ticket.requesterEmail.toLowerCase();
-    if (email === env.groupEmail.toLowerCase()) continue;
-    if (/(^|[.+_-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?)@/i.test(email)) continue;
+    const skip = surveyedRecently
+      ? `one already went out in the last ${RESEND_AFTER_HOURS} hours`
+      : !replied
+        ? "no reply was ever sent on this ticket"
+        : ticket.lastMessageAt < since
+          ? `the last email is over ${MAX_AGE_DAYS} days old`
+          : isAgent
+            ? `${email} is on the team`
+            : isBlocked
+              ? `${email} is blocked`
+              : email === env.groupEmail.toLowerCase() ||
+                  /(^|[.+_-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?)@/i.test(email)
+                ? `${email} is an automated address`
+                : null;
+    if (skip) {
+      await note(ticket.id, "csat_skipped", { reason: skip });
+      continue;
+    }
     try {
       await sendOne(ticket, solvedBy);
     } catch (err) {
       console.error(`csat: failed to send for #${ticket.number}`, err);
+      const message = err instanceof Error ? err.message : String(err);
+      await note(ticket.id, "csat_failed", { error: message.slice(0, 300) }).catch(() => {});
     }
   }
 }
@@ -107,11 +131,7 @@ async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | nu
     requesterEmail: ticket.requesterEmail,
     agentId: solvedBy?.id ?? null,
   });
-  await db.insert(events).values({
-    ticketId: ticket.id,
-    kind: "csat_sent",
-    data: { to: ticket.requesterEmail },
-  });
+  await note(ticket.id, "csat_sent", { to: ticket.requesterEmail });
 }
 
 export type CsatRating = "good" | "bad";
@@ -127,10 +147,10 @@ export async function recordCsat(token: string, rating: CsatRating, comment?: st
     .update(csatSurveys)
     .set({ rating, respondedAt: new Date(), ...(text ? { comment: text } : {}) })
     .where(eq(csatSurveys.id, survey.id));
-  await db.insert(events).values({
-    ticketId: survey.ticketId,
-    kind: "csat",
-    data: { rating, ...(text ? { comment: text } : {}), by: survey.requesterEmail },
+  await note(survey.ticketId, "csat", {
+    rating,
+    ...(text ? { comment: text } : {}),
+    by: survey.requesterEmail,
   });
 
   // A 👎 or a comment is worth a heads-up; a plain 👍 just shows in reports.
