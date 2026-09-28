@@ -32,17 +32,40 @@ export async function rosterPerson(email: string): Promise<RosterPerson | null> 
   const url = new URL("/api/people", env.rosterApiUrl);
   url.searchParams.set("email", email.toLowerCase());
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${env.rosterApiKey}` },
-    cache: "no-store",
-    signal: AbortSignal.timeout(8000),
-  });
+  const res = await get(url);
   // Only the route's own JSON 404 means "no such person"; a page-level 404 means
   // the route isn't deployed, which should be retried rather than cached.
   const json = res.headers.get("content-type")?.includes("application/json");
   if (res.status === 404 && json) return null;
   if (!res.ok || !json) throw new RosterError(res.status);
   return (await res.json()) as RosterPerson;
+}
+
+/** "www.roster.example.org" and "roster.example.org" are the same site. */
+function sameSite(a: string, b: string) {
+  return a.replace(/^www\./, "") === b.replace(/^www\./, "");
+}
+
+/**
+ * fetch drops the Authorization header when it follows a redirect to another
+ * host, and roster.example.org redirects to www.roster.example.org. So redirects are
+ * followed here, re-sending the key only within the same site.
+ */
+async function get(url: URL, hops = 0): Promise<Response> {
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${env.rosterApiKey}` },
+    cache: "no-store",
+    redirect: "manual",
+    signal: AbortSignal.timeout(8000),
+  });
+  const location = res.headers.get("location");
+  if (res.status >= 300 && res.status < 400 && location && hops < 3) {
+    const next = new URL(location, url);
+    if (next.protocol === "https:" && sameSite(next.hostname, url.hostname)) {
+      return get(next, hops + 1);
+    }
+  }
+  return res;
 }
 
 export class RosterError extends Error {

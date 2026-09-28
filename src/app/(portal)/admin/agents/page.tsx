@@ -6,6 +6,8 @@ import {
   AgentTeamToggles,
   ToggleAgentForm,
 } from "@/components/admin/forms";
+import { photosFor } from "@/lib/people";
+import { Avatar } from "@/components/ui/avatar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,7 @@ export default async function AgentsPage() {
     listTeams(),
     agentTeamRows(),
   ]);
+  const photos = await photosFor(agents.map((a) => a.email));
 
   const teamsByAgent = new Map<string, string[]>();
   for (const m of memberships) {
@@ -59,7 +62,12 @@ export default async function AgentsPage() {
               key={a.id}
               className={`border-b border-[var(--border)] ${a.active ? "" : "opacity-50"}`}
             >
-              <td className="py-2 pr-3">{a.name}</td>
+              <td className="py-2 pr-3">
+                <span className="flex items-center gap-2">
+                  <Avatar name={a.name} email={a.email} photo={photos[a.email.toLowerCase()]} size="sm" />
+                  {a.name}
+                </span>
+              </td>
               <td className="py-2 pr-3 text-[var(--muted-foreground)]">{a.email}</td>
               <td className="py-2 pr-3 capitalize">{a.role}</td>
               <td className="py-2 pr-3">

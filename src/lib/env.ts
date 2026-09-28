@@ -72,7 +72,7 @@ export const env = {
 
   // Roster (photos, names, grad years)
   get rosterApiUrl() {
-    return opt("ROSTER_API_URL", "https://roster.example.org").replace(/\/$/, "");
+    return opt("ROSTER_API_URL", "https://www.roster.example.org").replace(/\/$/, "");
   },
   get rosterApiKey() {
     return opt("ROSTER_API_KEY");

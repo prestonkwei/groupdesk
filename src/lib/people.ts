@@ -116,7 +116,14 @@ const RECACHE_RESUME_MS = 15 * 60 * 1000;
 const RECACHE_BUDGET_MS = 240 * 1000;
 const RECACHE_CONCURRENCY = 8;
 
-export type RecacheResult = { total: number; refreshed: number; failed: number; remaining: number };
+export type RecacheResult = {
+  total: number;
+  refreshed: number;
+  failed: number;
+  remaining: number;
+  /** Roster answered 401/503: the key is wrong or missing on one side. */
+  rosterRefused: boolean;
+};
 
 /**
  * Re-pull everyone the portal knows about (agents, requesters, senders and
@@ -149,7 +156,7 @@ export async function recacheEveryone(): Promise<RecacheResult> {
   let failed = 0;
 
   const worker = async () => {
-    while (next < emails.length && Date.now() < deadline) {
+    while (next < emails.length && Date.now() < deadline && rosterDisabledUntil <= Date.now()) {
       const email = emails[next++];
       try {
         if (await lookUpOne(email)) refreshed++;
@@ -162,7 +169,13 @@ export async function recacheEveryone(): Promise<RecacheResult> {
   };
   await Promise.all(Array.from({ length: RECACHE_CONCURRENCY }, worker));
 
-  return { total: emails.length, refreshed, failed, remaining: emails.length - next };
+  return {
+    total: emails.length,
+    refreshed,
+    failed,
+    remaining: emails.length - next,
+    rosterRefused: rosterDisabledUntil > Date.now(),
+  };
 }
 
 export async function peopleStats() {
