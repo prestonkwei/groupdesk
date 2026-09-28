@@ -30,7 +30,7 @@ export default async function NewMessagePage({
   const photos = await photosFor([...contacts.keys()].slice(0, 60));
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col">
+    <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 sm:px-4">
         <Link
           href="/tickets"

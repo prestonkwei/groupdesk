@@ -9,7 +9,7 @@ export default async function TemplatesPage() {
   const templates = await listTemplates();
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col">
+    <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-3 sm:px-5">
         <h1 className="text-sm font-semibold">Templates</h1>
         <span className="hidden text-xs text-[var(--muted-foreground)] sm:inline">

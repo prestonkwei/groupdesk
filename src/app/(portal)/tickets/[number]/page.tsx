@@ -1,4 +1,6 @@
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { ResizablePanel } from "@/components/resizable-panel";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { tickets } from "@/db/schema";
@@ -161,7 +163,7 @@ export default async function TicketPage({
     >
       <TicketHotkeys newer={nav.newer} older={nav.older} />
 
-      <div className="flex h-[calc(100dvh-3rem)]">
+      <div className="flex h-full">
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-2 py-2 sm:px-4 sm:py-2.5">
             <Link
@@ -261,38 +263,48 @@ export default async function TicketPage({
           />
         </div>
 
-        <aside className="hidden w-72 shrink-0 overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/40 md:block">
-          <div className="border-b border-[var(--border)] p-4">
-            <TicketProperties />
-          </div>
+        <ResizablePanel
+          id="ticket-panel-w"
+          side="right"
+          initialWidth={Number((await cookies()).get("ticket-panel-w")?.value) || undefined}
+          defaultWidth={288}
+          min={240}
+          max={520}
+          className="hidden md:flex"
+        >
+          <aside className="h-full overflow-y-auto border-l border-[var(--border)] bg-[var(--muted)]/40">
+            <div className="border-b border-[var(--border)] p-4">
+              <TicketProperties />
+            </div>
 
-          <div className="p-4">
-            <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Requester</p>
-            <RequesterCard
-              ticketId={ticket.id}
-              name={ticket.requesterName}
-              email={ticket.requesterEmail}
-              photo={photo(ticket.requesterEmail)}
-              contacts={participants}
-              vip={vip}
-            />
+            <div className="p-4">
+              <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Requester</p>
+              <RequesterCard
+                ticketId={ticket.id}
+                name={ticket.requesterName}
+                email={ticket.requesterEmail}
+                photo={photo(ticket.requesterEmail)}
+                contacts={participants}
+                vip={vip}
+              />
 
-            <dl className="mt-5 grid grid-cols-[76px_1fr] gap-x-2 gap-y-2 text-xs">
-              <dt className="text-[var(--muted-foreground)]">Opened</dt>
-              <dd title={dateTime(ticket.createdAt)}>
-                {shortDate(ticket.createdAt)}
-              </dd>
-              <dt className="text-[var(--muted-foreground)]">Last reply</dt>
-              <dd title={dateTime(ticket.lastMessageAt)}>
-                {shortDate(ticket.lastMessageAt)} · {relativeTime(ticket.lastMessageAt)}
-              </dd>
-            </dl>
-          </div>
+              <dl className="mt-5 grid grid-cols-[76px_1fr] gap-x-2 gap-y-2 text-xs">
+                <dt className="text-[var(--muted-foreground)]">Opened</dt>
+                <dd title={dateTime(ticket.createdAt)}>
+                  {shortDate(ticket.createdAt)}
+                </dd>
+                <dt className="text-[var(--muted-foreground)]">Last reply</dt>
+                <dd title={dateTime(ticket.lastMessageAt)}>
+                  {shortDate(ticket.lastMessageAt)} · {relativeTime(ticket.lastMessageAt)}
+                </dd>
+              </dl>
+            </div>
 
-          <div className="border-t border-[var(--border)] p-4">
-            <RequesterHistory email={ticket.requesterEmail} {...history} />
-          </div>
-        </aside>
+            <div className="border-t border-[var(--border)] p-4">
+              <RequesterHistory email={ticket.requesterEmail} {...history} />
+            </div>
+          </aside>
+        </ResizablePanel>
       </div>
     </TicketProvider>
   );

@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import { cookies } from "next/headers";
+import { ResizablePanel } from "@/components/resizable-panel";
 import Link from "next/link";
 import { canManageGmail, requireAgent } from "@/lib/auth";
 import { listSavedViews, listTags, listTeams, viewCounts } from "@/lib/queries";
@@ -33,7 +35,9 @@ export default async function PortalLayout({
   };
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    // The shell is pinned to the window: the sidebar, the page and any side
+    // panel each scroll on their own instead of the whole document scrolling.
+    <div className="flex h-dvh flex-col overflow-hidden">
       <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4">
         <Suspense fallback={null}>
           <MobileNav {...sidebar} />
@@ -53,11 +57,21 @@ export default async function PortalLayout({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <Suspense fallback={<div className="hidden w-56 shrink-0 border-r border-[var(--border)] md:block" />}>
-          <Sidebar {...sidebar} className="hidden md:flex" />
-        </Suspense>
-        <main className="min-w-0 flex-1">{children}</main>
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <ResizablePanel
+          id="sidebar-w"
+          side="left"
+          initialWidth={Number((await cookies()).get("sidebar-w")?.value) || undefined}
+          defaultWidth={224}
+          min={180}
+          max={360}
+          className="hidden md:flex"
+        >
+          <Suspense fallback={<div className="h-full border-r border-[var(--border)]" />}>
+            <Sidebar {...sidebar} className="h-full w-full overflow-y-auto" />
+          </Suspense>
+        </ResizablePanel>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
     </div>
   );

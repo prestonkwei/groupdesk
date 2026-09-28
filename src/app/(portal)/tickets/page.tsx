@@ -79,7 +79,7 @@ export default async function TicketsPage({
       : (VIEW_TITLES[filters.view ?? "unsolved"] ?? "Tickets");
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col">
+    <div className="flex h-full flex-col">
       <LiveRefresh />
 
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-[var(--border)] px-3 sm:px-5">
