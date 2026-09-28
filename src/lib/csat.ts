@@ -83,7 +83,7 @@ async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | nu
 <div><br></div>
 <div>Please let us know how we did:</div>
 <div style="margin:12px 0 4px">${button("good", "👍", "Good")}${button("bad", "👎", "Not good")}</div>
-<p style="margin-top:16px;color:#6b7280">--<br>${TEAM_NAME}</p>
+<p style="margin-top:16px;color:#6b7280">--<br>${TEAM_NAME}<br>Ticket #${ticket.number}</p>
 </div>`;
   const text = [
     hi,
@@ -96,6 +96,7 @@ async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | nu
     "",
     "--",
     TEAM_NAME,
+    `Ticket #${ticket.number}`,
   ].join("\n");
 
   // Recorded only once it's sent, so a failed send can be retried by solving again.

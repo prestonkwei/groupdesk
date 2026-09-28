@@ -63,7 +63,7 @@ export async function sendReply(args: {
     msg.setHeader("References", references.join(" "));
   }
 
-  const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\n${TEAM_NAME}\n`;
+  const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\n${TEAM_NAME}\nTicket #${ticket.number}\n`;
   const quote = last ? quoteOf(last) : null;
   msg.addMessage({
     contentType: "text/plain",
@@ -78,7 +78,7 @@ export async function sendReply(args: {
     : escapeHtml(args.bodyText.trim()).replace(/\n/g, "<br>");
   const html =
     `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.4;color:#1f2328">${content}` +
-    `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>${TEAM_NAME}</p></div>` +
+    `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>${TEAM_NAME}<br>Ticket #${ticket.number}</p></div>` +
     (quote?.html ?? "");
   msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
 
