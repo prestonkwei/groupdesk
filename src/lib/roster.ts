@@ -37,7 +37,7 @@ export async function rosterPerson(email: string): Promise<RosterPerson | null> 
   // the route isn't deployed, which should be retried rather than cached.
   const json = res.headers.get("content-type")?.includes("application/json");
   if (res.status === 404 && json) return null;
-  if (!res.ok || !json) throw new RosterError(res.status);
+  if (!res.ok || !json) throw new RosterError(res.status, blockedBy(res));
   return (await res.json()) as RosterPerson;
 }
 
@@ -68,9 +68,28 @@ async function get(url: URL, hops = 0): Promise<Response> {
   return res;
 }
 
+/**
+ * Who answered, when it wasn't Roster's route: Cloudflare and Vercel's firewall
+ * each mark their own blocks, which is the difference between a wrong key and
+ * a bot rule that needs an exception.
+ */
+function blockedBy(res: Response) {
+  const h = res.headers;
+  const parts = [
+    h.get("cf-mitigated") && `cloudflare ${h.get("cf-mitigated")}`,
+    h.get("x-vercel-mitigated") && `vercel firewall ${h.get("x-vercel-mitigated")}`,
+    h.get("server") && `server ${h.get("server")}`,
+    h.get("cf-ray") && `cf-ray ${h.get("cf-ray")}`,
+  ].filter(Boolean);
+  return parts.join(", ");
+}
+
 export class RosterError extends Error {
-  constructor(readonly status: number) {
-    super(`Roster /api/people answered ${status}`);
+  constructor(
+    readonly status: number,
+    detail = "",
+  ) {
+    super(`Roster /api/people answered ${status}${detail ? ` (${detail})` : ""}`);
   }
 }
 
