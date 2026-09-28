@@ -41,8 +41,16 @@ async function note(ticketId: string, kind: string, data: Record<string, unknown
  * the reason shows in the ticket's activity. Failures are logged there too,
  * never thrown: solving must not depend on email.
  */
-export async function sendCsatSurveys(ticketIds: string[], solvedBy: Agent | null) {
-  if (!ticketIds.length || process.env.CSAT_DISABLED === "1") return;
+export async function sendCsatSurveys(
+  ticketIds: string[],
+  solvedBy: Agent | null,
+  /** From the ticket's ⋯ menu: send regardless of status and the skip rules. */
+  options: { force?: boolean } = {},
+): Promise<{ sent: number; failed: string | null }> {
+  const force = !!options.force;
+  let sent = 0;
+  let failed: string | null = null;
+  if (!ticketIds.length || (process.env.CSAT_DISABLED === "1" && !force)) return { sent, failed };
 
   const since = new Date(Date.now() - MAX_AGE_DAYS * 86_400_000);
   const recent = new Date(Date.now() - RESEND_AFTER_HOURS * 3_600_000);
@@ -61,34 +69,35 @@ export async function sendCsatSurveys(ticketIds: string[], solvedBy: Agent | nul
 
   for (const { ticket, replied, surveyedRecently, isAgent, isBlocked } of rows) {
     // Reopened (or merged) again before we got here: nothing to say.
-    if (ticket.status !== "solved" || ticket.mergedIntoId) continue;
+    if (!force && (ticket.status !== "solved" || ticket.mergedIntoId)) continue;
     const email = ticket.requesterEmail.toLowerCase();
-    const skip = surveyedRecently
-      ? `one already went out in the last ${RESEND_AFTER_HOURS} hours`
-      : !replied
-        ? "no reply was ever sent on this ticket"
-        : ticket.lastMessageAt < since
-          ? `the last email is over ${MAX_AGE_DAYS} days old`
-          : isAgent
-            ? `${email} is on the team`
-            : isBlocked
-              ? `${email} is blocked`
-              : email === env.groupEmail.toLowerCase() ||
-                  /(^|[.+_-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?)@/i.test(email)
-                ? `${email} is an automated address`
-                : null;
+    // Never survey our own group address, even when forced: it would loop.
+    let skip: string | null = null;
+    if (email === env.groupEmail.toLowerCase()) skip = `${email} is the team's own address`;
+    else if (force) skip = null;
+    else if (surveyedRecently) skip = `one already went out in the last ${RESEND_AFTER_HOURS} hours`;
+    else if (!replied) skip = "no reply was ever sent on this ticket";
+    else if (ticket.lastMessageAt < since) skip = `the last email is over ${MAX_AGE_DAYS} days old`;
+    else if (isAgent) skip = `${email} is on the team`;
+    else if (isBlocked) skip = `${email} is blocked`;
+    else if (/(^|[.+_-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?)@/i.test(email)) {
+      skip = `${email} is an automated address`;
+    }
     if (skip) {
       await note(ticket.id, "csat_skipped", { reason: skip });
       continue;
     }
     try {
       await sendOne(ticket, solvedBy);
+      sent++;
     } catch (err) {
       console.error(`csat: failed to send for #${ticket.number}`, err);
       const message = err instanceof Error ? err.message : String(err);
+      failed = message;
       await note(ticket.id, "csat_failed", { error: message.slice(0, 300) }).catch(() => {});
     }
   }
+  return { sent, failed };
 }
 
 async function sendOne(ticket: typeof tickets.$inferSelect, solvedBy: Agent | null) {

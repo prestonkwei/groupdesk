@@ -405,6 +405,16 @@ export async function loadMoreTickets(filters: TicketFilters, offset: number) {
   return { rows, photos };
 }
 
+/** "Send satisfaction survey" in the ticket's ⋯ menu: skips the automatic rules. */
+export async function sendSurveyNow(ticketId: string): Promise<ActionState> {
+  const { agent } = await requireAgent();
+  const ticket = await ticketOr404(ticketId);
+  const r = await sendCsatSurveys([ticketId], agent, { force: true });
+  refresh(ticket.number);
+  if (r.sent) return { ok: `Survey sent to ${ticket.requesterEmail}` };
+  return { error: r.failed ? `Couldn't send: ${r.failed}` : "No survey sent; see the ticket's activity" };
+}
+
 /* ------------------------------------------------------------------ bulk */
 
 export type BulkOp =

@@ -3,14 +3,14 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowLeft, Ban, Merge, MoreHorizontal } from "lucide-react";
-import { findMergeTargets, markSpam, mergeTicket } from "@/lib/actions/tickets";
+import { ArrowLeft, Ban, Merge, MoreHorizontal, ThumbsUp } from "lucide-react";
+import { findMergeTargets, markSpam, mergeTicket, sendSurveyNow } from "@/lib/actions/tickets";
 import { StatusIcon } from "@/components/ui/ticket-icons";
 import { Input } from "@/components/ui/input";
 
 type Target = { number: number; subject: string; status: string; requester: string };
 
-/** "⋯" on a ticket: merge it into another ticket, or close it as spam. */
+/** "⋯" on a ticket: send the survey, merge it into another ticket, or close it as spam. */
 export function TicketMenu({ ticketId, number }: { ticketId: string; number: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -18,6 +18,7 @@ export function TicketMenu({ ticketId, number }: { ticketId: string; number: num
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Target[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export function TicketMenu({ ticketId, number }: { ticketId: string; number: num
           setMode("menu");
           setQuery("");
           setError(null);
+          setNotice(null);
         }
       }}
     >
@@ -71,6 +73,23 @@ export function TicketMenu({ ticketId, number }: { ticketId: string; number: num
             <>
               <button
                 type="button"
+                disabled={pending}
+                onClick={() => {
+                  if (!window.confirm("Email the requester the 👍/👎 satisfaction survey now?")) return;
+                  setError(null);
+                  start(async () => {
+                    const r = await sendSurveyNow(ticketId);
+                    if (r.error) setError(r.error);
+                    else setNotice(r.ok ?? "Survey sent");
+                  });
+                }}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--accent)] disabled:opacity-60"
+              >
+                <ThumbsUp className="size-4 text-[var(--muted-foreground)]" />
+                {pending ? "Sending…" : "Send satisfaction survey"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setMode("merge")}
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[var(--accent)]"
               >
@@ -91,6 +110,7 @@ export function TicketMenu({ ticketId, number }: { ticketId: string; number: num
               >
                 <Ban className="size-4" /> Mark as spam &amp; block sender
               </button>
+              {notice && <p className="px-2 py-1.5 text-xs text-[var(--muted-foreground)]">{notice}</p>}
               {error && <p className="px-2 py-1.5 text-xs text-[var(--destructive)]">{error}</p>}
             </>
           ) : (
