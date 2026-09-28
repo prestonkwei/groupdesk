@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
-import { agentTeams, agents, tags, teams, gmailSync } from "@/db/schema";
+import { agentTeams, agents, blockedSenders, tags, teams, gmailSync } from "@/db/schema";
 import { requireAdmin, requireGmailOwner } from "@/lib/auth";
 import { slugify } from "@/lib/utils";
 import { isTagColor } from "@/lib/tag-colors";
@@ -234,4 +234,41 @@ export async function disconnectGmail(
   await db.delete(gmailSync).where(eq(gmailSync.email, String(form.get("email"))));
   revalidatePath("/admin/gmail");
   return { ok: "Disconnected. Connect again to resume ingestion." };
+}
+
+/* ---------------------------------------------------------------- digest */
+
+/** Send yourself this week's digest now (a test; Friday's still goes out). */
+export async function previewDigest(): Promise<ActionState> {
+  const { agent } = await requireAdmin();
+  const { sendWeeklyDigests } = await import("@/lib/digest");
+  const [result] = await sendWeeklyDigests({ force: true, onlyAgentId: agent.id });
+  if (!result) return { error: "Your agent record is inactive" };
+  return result.ok ? { ok: `Sent to ${result.email}` } : { error: result.error };
+}
+
+/** Send every active agent their digest now, outside the Friday schedule. */
+export async function sendDigestToEveryone(): Promise<ActionState> {
+  await requireAdmin();
+  const { sendWeeklyDigests } = await import("@/lib/digest");
+  const results = await sendWeeklyDigests({ force: true });
+  const failed = results.filter((r) => !r.ok);
+  if (!results.length) return { error: "No active agents" };
+  if (failed.length === results.length) return { error: failed[0].error ?? "Send failed" };
+  return failed.length
+    ? { error: `Sent to ${results.length - failed.length}; failed for ${failed.map((f) => f.email).join(", ")}` }
+    : { ok: `Sent to all ${results.length} agents` };
+}
+
+/* ------------------------------------------------------------------ spam */
+
+export async function unblockSender(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const email = String(form.get("id") ?? "").toLowerCase();
+  await db.delete(blockedSenders).where(eq(blockedSenders.email, email));
+  revalidatePath("/admin/spam");
+  return { ok: `Unblocked ${email}` };
 }

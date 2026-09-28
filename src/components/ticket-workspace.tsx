@@ -32,6 +32,7 @@ import {
   StatusIcon,
 } from "@/components/ui/ticket-icons";
 import { Kbd } from "@/components/shortcuts";
+import { LiveRefresh, type Viewer } from "@/components/live-refresh";
 import { cn } from "@/lib/utils";
 
 export type AgentOption = { id: string; name: string; email: string; photo: string | null };
@@ -59,6 +60,10 @@ type Ctx = {
   picker: PickerName | null;
   setPicker: (p: PickerName | null) => void;
   mutate: (patch: Partial<Snapshot>, run: () => Promise<ActionState>, announce?: boolean) => void;
+  /** Whether this agent has the reply composer open (shared as presence). */
+  replying: boolean;
+  setReplying: (r: boolean) => void;
+  viewers: Viewer[];
 };
 
 const TicketCtx = createContext<Ctx | null>(null);
@@ -67,6 +72,12 @@ function useTicket() {
   const ctx = useContext(TicketCtx);
   if (!ctx) throw new Error("useTicket outside TicketProvider");
   return ctx;
+}
+
+/** For components that also render outside a ticket (e.g. the composer). */
+export function useTicketPresence() {
+  const ctx = useContext(TicketCtx);
+  return ctx ? { setReplying: ctx.setReplying, viewers: ctx.viewers } : null;
 }
 
 /**
@@ -97,6 +108,8 @@ export function TicketProvider({
   }));
   const [, start] = useTransition();
   const [picker, setPicker] = useState<PickerName | null>(null);
+  const [replying, setReplying] = useState(false);
+  const [viewers, setViewers] = useState<Viewer[]>([]);
   const [toast, setToast] = useState<{ text: string; bad?: boolean } | null>(null);
 
   useEffect(() => {
@@ -120,8 +133,28 @@ export function TicketProvider({
 
   return (
     <TicketCtx.Provider
-      value={{ ticketId, state, me, agents, teams, tags, picker, setPicker, mutate }}
+      value={{
+        ticketId,
+        state,
+        me,
+        agents,
+        teams,
+        tags,
+        picker,
+        setPicker,
+        mutate,
+        replying,
+        setReplying,
+        viewers,
+      }}
     >
+      {/* The page's poll: refreshes on changes and carries presence both ways. */}
+      <LiveRefresh
+        intervalMs={5000}
+        ticketId={ticketId}
+        replying={replying}
+        onViewers={setViewers}
+      />
       {children}
       {toast && (
         <div
@@ -225,6 +258,7 @@ export function TicketProperties() {
           items={STATUSES.map((s) => ({
             value: s.value,
             label: s.label,
+            hint: s.hint,
             icon: <StatusIcon status={s.value} />,
           }))}
           onSelect={(v) =>
@@ -474,5 +508,53 @@ export function MobileDetails({ children }: { children?: React.ReactNode }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* --------------------------------------------------------------- presence */
+
+/** "Kat is viewing" / "Kat is replying…" next to the star, so nobody double-answers. */
+export function PresenceBar() {
+  const { viewers, agents } = useTicket();
+  if (!viewers.length) return null;
+  const someoneReplying = viewers.find((v) => v.replying);
+  const photoFor = (email: string) =>
+    agents.find((a) => a.email.toLowerCase() === email.toLowerCase())?.photo ?? null;
+  const names = viewers.map((v) => v.name.split(" ")[0]);
+  const label = someoneReplying
+    ? `${someoneReplying.name.split(" ")[0]} is replying…`
+    : `${names.slice(0, 2).join(" & ")}${names.length > 2 ? ` +${names.length - 2}` : ""} viewing`;
+
+  return (
+    <span
+      className={cn(
+        "flex min-w-0 items-center gap-2 rounded-full py-0.5 pl-0.5 pr-2.5 text-xs",
+        someoneReplying
+          ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          : "bg-[var(--muted)] text-[var(--muted-foreground)]",
+      )}
+      title={viewers.map((v) => `${v.name} (${v.replying ? "replying" : "viewing"})`).join(", ")}
+    >
+      <span className="flex -space-x-1.5">
+        {viewers.slice(0, 3).map((v) => (
+          <span key={v.email} className="relative">
+            <Avatar
+              name={v.name}
+              email={v.email}
+              photo={photoFor(v.email)}
+              size="xs"
+              className="ring-2 ring-[var(--background)]"
+            />
+            <span
+              className={cn(
+                "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-[var(--background)]",
+                v.replying ? "bg-amber-500" : "bg-emerald-500",
+              )}
+            />
+          </span>
+        ))}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
   );
 }

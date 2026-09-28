@@ -1,14 +1,21 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Lock, Reply, Send, StickyNote } from "lucide-react";
 import { addNote, replyToTicket, type ActionState } from "@/lib/actions/tickets";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/shortcuts";
-import { RichEditor, type RichValue } from "@/components/rich-editor";
+import {
+  RichEditor,
+  type MentionOption,
+  type RichValue,
+  type TemplateOption,
+} from "@/components/rich-editor";
+import { firstNameOf, recipientVars } from "@/lib/template-vars";
 import { RecipientField, type Contact } from "@/components/recipient-field";
 import { useHotkeys } from "@/lib/hotkeys";
+import { useTicketPresence } from "@/components/ticket-workspace";
 import { cn } from "@/lib/utils";
 
 type Mode = "reply" | "note";
@@ -41,6 +48,10 @@ export function Composer({
   defaultTo,
   defaultCc,
   contacts,
+  templates,
+  ticketNumber,
+  ticketSubject,
+  agents,
 }: {
   ticketId: string;
   /** Exactly what the reply's Subject will be, e.g. "[TICKET: #1058] …". */
@@ -51,9 +62,22 @@ export function Composer({
   defaultTo: string[];
   defaultCc: string[];
   contacts: Contact[];
+  templates: TemplateOption[];
+  ticketNumber: number;
+  ticketSubject: string;
+  agents: MentionOption[];
 }) {
   const [mode, setMode] = useState<Mode>("reply");
   const [open, setOpen] = useState(false);
+  const presence = useTicketPresence();
+  const setReplying = presence?.setReplying;
+  const othersReplying = (presence?.viewers ?? []).filter((v) => v.replying);
+
+  // Tell other agents on this ticket that a reply is being written.
+  useEffect(() => {
+    setReplying?.(open && mode === "reply");
+    return () => setReplying?.(false);
+  }, [open, mode, setReplying]);
   const [body, setBody] = useState<RichValue>(EMPTY);
   const [to, setTo] = useState(defaultTo);
   const [cc, setCc] = useState(defaultCc);
@@ -154,6 +178,12 @@ export function Composer({
           )}
         </div>
 
+        {mode === "reply" && othersReplying.length > 0 && (
+          <p className="mb-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            {othersReplying.map((v) => v.name).join(" and ")}{" "}
+            {othersReplying.length === 1 ? "is" : "are"} replying to this ticket right now.
+          </p>
+        )}
         <div
           className={cn(
             "overflow-visible rounded-lg border shadow-sm focus-within:ring-2 focus-within:ring-[var(--ring)]",
@@ -200,8 +230,27 @@ export function Composer({
 
           <RichEditor
             placeholder={
-              mode === "reply" ? "Write your reply…" : "Note for the team — not emailed to anyone"
+              mode === "reply"
+                ? "Write your reply… (type / for templates)"
+                : "Note for the team — type @ to mention someone"
             }
+            templates={templates}
+            // "@" suggests teammates in internal notes (they get an email).
+            mentions={mode === "note" ? agents : undefined}
+            variables={() => {
+              // Variables describe the first To recipient.
+              const email = to[0] ?? "";
+              const known = contacts.find((c) => c.email === email);
+              return recipientVars(
+                { email, name: known?.name ?? (email === defaultTo[0] ? requesterName : null) },
+                {
+                  ticket_number: String(ticketNumber),
+                  subject: ticketSubject,
+                  agent_name: fromName,
+                  agent_first_name: firstNameOf(fromName),
+                },
+              );
+            }}
             onChange={setBody}
             onSubmit={() => formRef.current?.requestSubmit()}
             onEscape={() => setOpen(false)}

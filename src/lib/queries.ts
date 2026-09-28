@@ -1,6 +1,8 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql, type SQL } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/db";
+import { replyDueAt } from "@/lib/sla";
 import {
   agents,
   events,
@@ -12,18 +14,79 @@ import {
   agentTeams,
   attachments,
   ticketAssignees,
+  templates,
+  savedViews,
   type Agent,
 } from "@/db/schema";
 
 export type TicketView = "all" | "unassigned" | "mine" | "unsolved" | "starred";
 
+export type TicketSort = "activity" | "created" | "priority" | "waiting" | "requester" | "tag" | "number";
+
 export type TicketFilters = {
   view?: TicketView;
   team?: string;
   tag?: string;
+  /** open | pending | solved | closed | unsolved | any */
   status?: string;
+  /** p0 … p3 | none */
+  priority?: string;
+  /** "me" | "none" | an agent id */
+  assignee?: string;
   q?: string;
+  sort?: TicketSort;
+  dir?: "asc" | "desc";
 };
+
+export const SORTS: { value: TicketSort; label: string; defaultDir: "asc" | "desc" }[] = [
+  { value: "activity", label: "Latest activity", defaultDir: "desc" },
+  { value: "created", label: "Date received", defaultDir: "desc" },
+  { value: "waiting", label: "Waiting longest", defaultDir: "asc" },
+  { value: "priority", label: "Priority", defaultDir: "asc" },
+  { value: "requester", label: "Requester", defaultDir: "asc" },
+  { value: "tag", label: "Tag", defaultDir: "asc" },
+  { value: "number", label: "Ticket number", defaultDir: "desc" },
+];
+
+/**
+ * When the requester's unanswered email arrived, for open tickets: the first
+ * inbound message after our latest reply. Null when nothing is waiting on us
+ * (not open, or we spoke last). Drives the reply-due (SLA) pill.
+ */
+const waitingSince = sql<Date | null>`case when ${tickets.status} = 'open' then (
+  select min(m.sent_at) from messages m
+   where m.ticket_id = ${tickets.id} and m.direction = 'inbound'
+     and m.sent_at > coalesce(
+       (select max(o.sent_at) from messages o
+         where o.ticket_id = ${tickets.id} and o.direction = 'outbound'),
+       '-infinity'::timestamptz)
+) end`;
+
+const priorityRank = sql`case ${tickets.priority} when 'p0' then 0 when 'p1' then 1 when 'p2' then 2 when 'p3' then 3 else 4 end`;
+const firstTagName = sql`(select min(g.name) from ticket_tags tt join tags g on g.id = tt.tag_id where tt.ticket_id = ${tickets.id})`;
+
+function sortOrder(f: TicketFilters): SQL[] {
+  const def = SORTS.find((s) => s.value === f.sort);
+  const dir = f.dir ?? def?.defaultDir ?? "desc";
+  const by = (expr: SQL | AnyPgColumn) =>
+    dir === "asc" ? sql`${expr} asc nulls last` : sql`${expr} desc nulls last`;
+  switch (f.sort) {
+    case "created":
+      return [by(tickets.createdAt)];
+    case "waiting":
+      return [by(waitingSince), desc(tickets.lastMessageAt)];
+    case "priority":
+      return [by(priorityRank), desc(tickets.lastMessageAt)];
+    case "requester":
+      return [by(sql`lower(coalesce(${tickets.requesterName}, ${tickets.requesterEmail}))`)];
+    case "tag":
+      return [by(firstTagName), desc(tickets.lastMessageAt)];
+    case "number":
+      return [by(tickets.number)];
+    default:
+      return [by(tickets.lastMessageAt)];
+  }
+}
 
 function starredBy(me: Agent) {
   return sql<boolean>`exists (
@@ -73,6 +136,11 @@ function searchMatch(q: string): SQL {
   )`;
 }
 
+function exactNumber(q?: string) {
+  const m = q?.trim().match(/^#?(\d+)$/);
+  return m ? Number(m[1]) : null;
+}
+
 function filterClauses(f: TicketFilters, me: Agent): SQL[] {
   const where: SQL[] = [];
 
@@ -93,9 +161,19 @@ function filterClauses(f: TicketFilters, me: Agent): SQL[] {
       break;
   }
 
-  if (f.status && f.status !== "any") {
+  if (f.status === "unsolved") {
+    where.push(inArray(tickets.status, ["open", "pending"]));
+  } else if (f.status && f.status !== "any") {
     where.push(sql`${tickets.status}::text = ${f.status}`);
   }
+  if (f.priority) where.push(sql`${tickets.priority}::text = ${f.priority}`);
+  if (f.assignee === "me") where.push(assignedTo(me));
+  else if (f.assignee === "none") where.push(sql`not ${hasAssignee()}`);
+  else if (f.assignee && /^[0-9a-f-]{36}$/i.test(f.assignee)) {
+    where.push(sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id} and ta.agent_id = ${f.assignee})`);
+  }
+  // Merged tickets live on inside the ticket they were merged into.
+  where.push(sql`${tickets.mergedIntoId} is null`);
   if (f.team) where.push(sql`${teams.slug} = ${f.team}`);
   if (f.q?.trim()) where.push(searchMatch(f.q.trim()));
   if (f.tag) {
@@ -135,6 +213,7 @@ export async function listTickets(
       lastMessageAt: tickets.lastMessageAt,
       createdAt: tickets.createdAt,
       updatedAt: tickets.updatedAt,
+      waitingSince,
       teamId: tickets.teamId,
       teamName: teams.name,
       teamSlug: teams.slug,
@@ -148,9 +227,11 @@ export async function listTickets(
     .where(where.length ? and(...where) : undefined)
     // Searching ranks by match quality; browsing by most recent activity.
     .orderBy(
-      ...(f.q?.trim() ? [desc(searchScore(f.q.trim()))] : []),
-      desc(tickets.lastMessageAt),
-      // Tie-break so pages never overlap or skip when timestamps match.
+      // An exact "#1234" hit always comes first.
+      ...(exactNumber(f.q) ? [sql`(${tickets.number} = ${exactNumber(f.q)}) desc`] : []),
+      // Searching ranks by match quality unless a sort was picked.
+      ...(f.q?.trim() && !f.sort ? [desc(searchScore(f.q.trim()))] : sortOrder(f)),
+      // Tie-break so pages never overlap or skip when values match.
       desc(tickets.id),
     )
     .limit(limit)
@@ -180,11 +261,17 @@ export async function listTickets(
 
   const assigneesByTicket = await assigneesFor(ids);
 
-  return rows.map((r) => ({
-    ...r,
-    tags: byTicket.get(r.id) ?? [],
-    assignees: assigneesByTicket.get(r.id) ?? [],
-  }));
+  return rows.map((r) => {
+    // Raw SQL columns come back as strings.
+    const since = r.waitingSince ? new Date(r.waitingSince) : null;
+    return {
+      ...r,
+      waitingSince: since,
+      replyDueAt: since ? replyDueAt(since, r.priority) : null,
+      tags: byTicket.get(r.id) ?? [],
+      assignees: assigneesByTicket.get(r.id) ?? [],
+    };
+  });
 }
 
 export type AssigneeRef = { id: string; name: string; email: string };
@@ -372,4 +459,60 @@ export async function ticketTagIds(ticketId: string) {
 
 export async function agentTeamRows() {
   return db.select().from(agentTeams);
+}
+
+/** People who've written in recently, for To/Cc suggestions when composing. */
+export async function recentRequesters(limit = 300) {
+  return db
+    .select({
+      email: tickets.requesterEmail,
+      name: sql<string | null>`max(${tickets.requesterName})`,
+    })
+    .from(tickets)
+    .groupBy(tickets.requesterEmail)
+    .orderBy(desc(sql`max(${tickets.lastMessageAt})`))
+    .limit(limit);
+}
+
+/** The requester's other tickets, newest first, for the ticket sidebar. */
+export async function requesterHistory(email: string, excludeId: string, limit = 8) {
+  const where = and(sql`lower(${tickets.requesterEmail}) = ${email.toLowerCase()}`, ne(tickets.id, excludeId));
+  const [rows, [count]] = await Promise.all([
+    db
+      .select({
+        number: tickets.number,
+        subject: tickets.subject,
+        status: tickets.status,
+        createdAt: tickets.createdAt,
+      })
+      .from(tickets)
+      .where(where)
+      .orderBy(desc(tickets.createdAt))
+      .limit(limit),
+    db.select({ n: sql<number>`count(*)::int` }).from(tickets).where(where),
+  ]);
+  return { rows, total: count?.n ?? 0 };
+}
+
+/** The shared template library, for the composer's "/" menu and /templates. */
+export async function listTemplates() {
+  return db
+    .select({
+      id: templates.id,
+      name: templates.name,
+      bodyHtml: templates.bodyHtml,
+      updatedAt: templates.updatedAt,
+      updatedByName: agents.name,
+    })
+    .from(templates)
+    .leftJoin(agents, eq(agents.id, templates.updatedBy))
+    .orderBy(asc(templates.name));
+}
+
+export async function listSavedViews(agentId: string) {
+  return db
+    .select({ id: savedViews.id, name: savedViews.name, query: savedViews.query })
+    .from(savedViews)
+    .where(eq(savedViews.agentId, agentId))
+    .orderBy(asc(savedViews.position), asc(savedViews.createdAt));
 }

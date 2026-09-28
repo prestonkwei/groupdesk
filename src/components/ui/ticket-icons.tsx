@@ -1,11 +1,15 @@
 import { cn } from "@/lib/utils";
 import type { TicketPriority, TicketStatus } from "@/db/schema";
 
-export const STATUSES: { value: TicketStatus; label: string }[] = [
-  { value: "open", label: "Open" },
-  { value: "pending", label: "Pending" },
-  { value: "solved", label: "Solved" },
-  { value: "closed", label: "Closed" },
+/**
+ * Solved means we helped; closed means it was never a real request
+ * (notifications, newsletters, spam). Reports leave closed tickets out.
+ */
+export const STATUSES: { value: TicketStatus; label: string; hint: string }[] = [
+  { value: "open", label: "Open", hint: "Needs a reply" },
+  { value: "pending", label: "Pending", hint: "Waiting on them" },
+  { value: "solved", label: "Solved", hint: "Done" },
+  { value: "closed", label: "Closed", hint: "Not a request" },
 ];
 
 export const PRIORITIES: { value: TicketPriority; label: string }[] = [

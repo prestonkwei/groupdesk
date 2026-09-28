@@ -121,6 +121,25 @@ name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
   `directory.readonly`). Enable the People API in the Cloud project and
   reconnect Gmail once so the new scope is granted. Photos are cached in
   `people` for a week; anyone outside the directory gets initials.
+- **Templates** live at `/templates`, shared by the whole team. Type `/` in any
+  reply to insert one; `{{first_name}}`, `{{ticket_number}}`, `{{agent_name}}`
+  and friends are filled in, with `{{first_name|there}}` as a fallback form.
+- **Reports** (`/admin/reports`, admins) leave out tickets marked `imported`
+  (created by the backfill) unless asked to include them.
+- **Reply targets (SLA)** are in school hours, Mon–Fri 8am–4pm Pacific
+  (`NEXT_PUBLIC_SCHOOL_HOURS="08:00-16:00"` to change): P0 2h, P1 4h, P2 or
+  none 1 school day, P3 2 school days, counted from the requester's first
+  unanswered email on an open ticket. Holidays aren't modelled.
+- **Notifications** email an agent when they're assigned, when a requester
+  replies on their ticket, or when they're @mentioned in a note. Each agent
+  can switch them off from the avatar menu. Subjects carry `[helpdesk notice]`;
+  replies to them are ignored.
+- **Merge** (ticket ⋯ menu) moves one ticket's emails, notes, tags and
+  assignees into another; the old number redirects. **Mark as spam** closes it
+  and blocks the sender (new mail from them arrives closed); unblock at
+  `/admin/spam`.
+- **Saved views**: filters and sort live in the URL; "Save view" stores the
+  current one in your sidebar.
 - **Search** is fuzzy (`pg_trgm`, enabled by migration 0001): typo-tolerant on
   subject and requester, plus exact text in message bodies and `#1234`.
 
@@ -139,17 +158,34 @@ name exactly; the app resolves it to a label id and caches it on `gmail_sync`.
 4. `vercel-build` runs `db:migrate` before `next build`, so schema changes ship
    with the deploy.
 
-### Crons
+### Crons and catch-up
 
-`vercel.json` schedules `/api/cron/gmail-watch` daily, which the Hobby plan
-allows. The 5-minute reconcile needs one of:
+`vercel.json` schedules `/api/cron/gmail-watch` (watch renewal) and
+`/api/cron/gmail-reconcile` (catch-up sync) once a day each, which the Hobby
+plan allows. Between those, the catch-up runs two other ways:
 
-- Vercel Pro, adding
-  `{ "path": "/api/cron/gmail-reconcile", "schedule": "*/5 * * * *" }`
-- A Cloudflare Worker cron trigger
-- n8n on the Mac mini
+- **In the app.** The portal's 5-second poll runs the same sync whenever
+  nothing has synced for 5 minutes, so dropped pushes are picked up as long
+  as anyone has the portal open.
+- **GitHub Actions**, every 10 minutes (`.github/workflows/gmail-reconcile.yml`).
+  Add the repository secret `CRON_SECRET` (same value as in Vercel) to turn it
+  on; it skips quietly without it. Set the repository variable `APP_URL` if the
+  site moves off `https://tickets.example.org`.
 
-calling the endpoint with `Authorization: Bearer $CRON_SECRET`.
+Two more scheduled jobs:
+
+- `/api/cron/daily` auto-solves tickets left **pending** (waiting on the
+  requester) with no reply for `AUTO_SOLVE_DAYS` (default 7). A reply from
+  the requester moves a pending ticket back to open, so only true silence
+  counts. Closed is for non-requests (notifications, spam) and is never set
+  automatically; reports leave closed tickets out.
+- `/api/cron/digest` and `/api/cron/digest-winter` email every active agent
+  their weekly digest at 4pm Friday Pacific. Vercel cron is UTC with no DST,
+  so both fire and only the one landing in 4pm Pacific sends. Replies to the
+  digest (subject `[helpdesk digest]`) are ignored by ingest. Admins can send
+  themselves a preview from `/admin/reports`.
+
+The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
 
 ## Security notes
 

@@ -64,6 +64,28 @@
   * {
     border-color: var(--border);
   }
+  /* Tailwind v4 resets buttons to the default cursor; anything clickable
+     gets the hand, and disabled controls say so. */
+  button:not(:disabled),
+  [role="button"],
+  [role="checkbox"],
+  [role="switch"],
+  [role="option"],
+  [role="menuitem"],
+  [cmdk-item],
+  summary,
+  label[for],
+  select:not(:disabled),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="date"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :disabled,
+  [aria-disabled="true"],
+  [data-disabled="true"] {
+    cursor: not-allowed;
+  }
   body {
     background-color: var(--background);
     color: var(--foreground);
@@ -92,4 +114,16 @@
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* Report charts: categorical slots 1–2 of the validated palette, stepped per mode. */
+.viz-root {
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --grid: oklch(0.93 0.004 264);
+}
+.dark .viz-root {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --grid: oklch(0.3 0.012 264);
 }

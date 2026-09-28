@@ -174,13 +174,21 @@ export function NameForm({
   );
 }
 
-export function DeleteForm({ action, id }: { action: Action; id: string }) {
+export function DeleteForm({
+  action,
+  id,
+  label = "Delete",
+}: {
+  action: Action;
+  id: string;
+  label?: string;
+}) {
   const [, formAction, pending] = useActionState<ActionState, FormData>(action, {});
   return (
     <form action={formAction}>
       <input type="hidden" name="id" value={id} />
       <Button type="submit" size="sm" variant="ghost" disabled={pending}>
-        Delete
+        {label}
       </Button>
     </form>
   );
@@ -199,6 +207,32 @@ export function PlainActionButton({
 }) {
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     async () => action(),
+    {},
+  );
+  return (
+    <form action={formAction} className="flex items-center gap-2">
+      <Button type="submit" size="sm" variant={variant} disabled={pending}>
+        {pending ? "Working…" : label}
+      </Button>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/** Like PlainActionButton, but asks first: for actions that email people. */
+export function ConfirmActionButton({
+  action,
+  label,
+  confirm,
+  variant = "outline",
+}: {
+  action: () => Promise<ActionState>;
+  label: string;
+  confirm: string;
+  variant?: "default" | "outline" | "ghost" | "destructive";
+}) {
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(
+    async (prev) => (window.confirm(confirm) ? action() : prev),
     {},
   );
   return (

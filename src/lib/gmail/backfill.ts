@@ -85,7 +85,7 @@ export async function backfillBatch(
     if (Date.now() - started > budgetMs) break;
     for (let attempt = 1; ; attempt++) {
       try {
-        const result = await ingestGmailMessage(client, id);
+        const result = await ingestGmailMessage(client, id, { imported: true });
         if (result.status === "ingested") ingested++;
         else skipped++;
         backoff = 0;

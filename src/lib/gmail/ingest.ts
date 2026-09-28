@@ -3,10 +3,19 @@ import PostalMime, { type Email, type Address } from "postal-mime";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { put } from "@vercel/blob";
 import { db, type Tx } from "@/db";
-import { agents, attachments, events, messages, tickets } from "@/db/schema";
+import {
+  agents,
+  attachments,
+  blockedSenders,
+  events,
+  messages,
+  tickets,
+  type Ticket,
+} from "@/db/schema";
 import { env } from "@/lib/env";
 import type { GmailClient } from "./client";
-import { stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
+import { notifyReply } from "@/lib/notify";
+import { isDigestSubject, stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
 import { flagVipIfFaculty } from "@/lib/vip";
 
 export type IngestResult =
@@ -78,6 +87,36 @@ function formatAddress(a: Address): string | undefined {
   return undefined;
 }
 
+/**
+ * When an agent forwards someone's email to the group ("Fwd: …"), the real
+ * requester is the "From:" inside the forwarded block, not the agent. Handles
+ * Gmail ("---------- Forwarded message ---------"), Apple Mail ("Begin
+ * forwarded message:") and Outlook ("From: … Sent: …") layouts.
+ */
+function forwardedSender(email: Email, subject: string): { email: string; name: string | null } | null {
+  const text =
+    email.text ??
+    (email.html ?? "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|tr|li)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&nbsp;/g, " ");
+  const marker = text.search(
+    /-{3,}\s*Forwarded message\s*-{3,}|Begin forwarded message:|-{3,}\s*Original Message\s*-{3,}|_{10,}/i,
+  );
+  const looksForwarded = /^\s*(fwd?|fw)\s*:/i.test(subject);
+  if (marker < 0 && !looksForwarded) return null;
+  const block = text.slice(Math.max(marker, 0), Math.max(marker, 0) + 2000);
+  const line = block.match(/^[>\s*]*From:\s*\*?\s*(.+?)\s*\*?$/im)?.[1];
+  // "From: Jamie Rivera <jrivera@x.org>", "From: jrivera@x.org" or
+  // "From: Jamie Rivera [mailto:jrivera@x.org]".
+  const normalised = line?.replace(/\[mailto:([^\]]+)\]/i, "<$1>");
+  return parseAddress(normalised);
+}
+
 function referenceIds(email: Email): string[] {
   const raw = headerValue(email, "references") ?? "";
   return [...raw.matchAll(/<[^>]+>/g)].map((m) => m[0]);
@@ -106,6 +145,7 @@ function stripReplyPrefix(subject: string) {
 export async function ingestGmailMessage(
   client: GmailClient,
   gmailMessageId: string,
+  options: { imported?: boolean } = {},
 ): Promise<IngestResult> {
   const existing = await db
     .select({ id: messages.id })
@@ -130,6 +170,7 @@ export async function ingestGmailMessage(
     gmailMessageId,
     gmailThreadId: data.threadId ?? null,
     internalDate: data.internalDate ? Number(data.internalDate) : undefined,
+    imported: options.imported,
   });
 }
 
@@ -138,6 +179,8 @@ export async function ingestParsedEmail(input: {
   gmailMessageId: string | null;
   gmailThreadId: string | null;
   internalDate?: number;
+  /** Set by the backfill: a ticket it creates is marked as imported. */
+  imported?: boolean;
 }): Promise<IngestResult> {
   const { parsed, gmailMessageId, gmailThreadId } = input;
 
@@ -151,6 +194,11 @@ export async function ingestParsedEmail(input: {
     : input.internalDate
       ? new Date(input.internalDate)
       : new Date();
+
+  // Replies to the weekly digest (sent from the group address) aren't requests.
+  if (isDigestSubject(subject)) {
+    return { status: "skipped", reason: "reply to the weekly digest" };
+  }
 
   // Our own outbound copy coming back around through the group.
   if (rfcMessageId) {
@@ -179,18 +227,58 @@ export async function ingestParsedEmail(input: {
     .where(sql`lower(${agents.email}) = ${sender.email}`)
     .limit(1);
 
-  const direction = agent ? "outbound" : "inbound";
+  // An agent forwarding someone else's email: that someone is the requester,
+  // and the message is theirs as far as the ticket is concerned.
+  const forwardedFrom = agent ? forwardedSender(parsed, subject) : null;
+  const forwarded =
+    forwardedFrom && forwardedFrom.email !== sender.email && forwardedFrom.email !== env.groupEmail.toLowerCase()
+      ? forwardedFrom
+      : null;
+
+  const direction = agent && !forwarded ? "outbound" : "inbound";
 
   const result = await db.transaction(async (tx) => {
-    const ticket = await findOrCreateTicket(tx, {
+    const { ticket, created } = await findOrCreateTicket(tx, {
       inReplyTo,
       refs,
       gmailThreadId,
       subject,
       sender,
+      requester: forwarded ?? sender,
       direction,
       sentAt,
+      imported: input.imported ?? false,
     });
+
+    // Senders marked as spam still land (so nothing is lost) but closed.
+    if (created && direction === "inbound") {
+      const requester = (forwarded ?? sender).email;
+      const [blocked] = await tx
+        .select({ email: blockedSenders.email })
+        .from(blockedSenders)
+        .where(eq(blockedSenders.email, requester))
+        .limit(1);
+      if (blocked) {
+        await tx.update(tickets).set({ status: "closed" }).where(eq(tickets.id, ticket.id));
+        ticket.status = "closed";
+        await tx.insert(events).values({
+          ticketId: ticket.id,
+          kind: "spam",
+          data: { email: requester, auto: true },
+          createdAt: sentAt,
+        });
+      }
+    }
+
+    if (created && forwarded) {
+      await tx.insert(events).values({
+        ticketId: ticket.id,
+        actorAgentId: agent?.id ?? null,
+        kind: "requester",
+        data: { to: forwarded.email, toName: forwarded.name, via: "forward" },
+        createdAt: sentAt,
+      });
+    }
 
     const [inserted] = await tx
       .insert(messages)
@@ -218,14 +306,23 @@ export async function ingestParsedEmail(input: {
       return { status: "skipped" as const, reason: "raced with another delivery" };
     }
 
+    // A reply from the requester puts the ball back in our court: solved and
+    // closed tickets reopen, and "pending" (waiting on them) goes back to open
+    // so it can't be auto-solved while their answer sits unread.
+    // Only the newest message can change the state: an older email that
+    // arrives late (catch-up, backfill) doesn't reopen anything or move
+    // "last message" backwards.
+    const isNewest = created || sentAt >= ticket.lastMessageAt;
     const reopened =
+      !created &&
+      isNewest &&
       direction === "inbound" &&
-      (ticket.status === "solved" || ticket.status === "closed");
+      (ticket.status === "solved" || ticket.status === "closed" || ticket.status === "pending");
 
     await tx
       .update(tickets)
       .set({
-        lastMessageAt: sentAt,
+        lastMessageAt: sql`greatest(${tickets.lastMessageAt}, ${sentAt})`,
         updatedAt: new Date(),
         ...(reopened ? { status: "open" as const } : {}),
       })
@@ -236,6 +333,8 @@ export async function ingestParsedEmail(input: {
         ticketId: ticket.id,
         kind: "reopened",
         data: { by: sender.email },
+        // Timeline order follows the email, not when we fetched it.
+        createdAt: sentAt,
       });
     }
 
@@ -244,14 +343,27 @@ export async function ingestParsedEmail(input: {
       ticketId: ticket.id,
       ticketNumber: ticket.number,
       messageId: inserted.id,
-      newTicket: ticket.created,
+      newTicket: created,
+      // Tell assignees about a fresh reply (not about old mail the backfill
+      // or a catch-up is filling in).
+      notify:
+        !created && isNewest && direction === "inbound" && !input.imported
+          ? { id: ticket.id, number: ticket.number, subject: ticket.subject }
+          : null,
     };
   });
+
+  if (result.status === "ingested" && result.notify) {
+    const snippet = (parsed.text ?? "").split(/\n\s*On .{5,200}wrote:/)[0].trim().slice(0, 400);
+    await notifyReply(result.notify, forwarded ?? sender, snippet).catch((err) =>
+      console.error("reply notification failed", err),
+    );
+  }
 
   if (result.status === "ingested") {
     await storeAttachments(result.messageId, parsed);
     if (result.newTicket && direction === "inbound") {
-      await flagVipIfFaculty(result.ticketId, sender.email);
+      await flagVipIfFaculty(result.ticketId, (forwarded ?? sender).email);
     }
   }
   return result;
@@ -259,7 +371,23 @@ export async function ingestParsedEmail(input: {
 
 /* ------------------------------------------------------------- threading */
 
+/** Finds the ticket for an email (following merges) or creates one. */
 async function findOrCreateTicket(
+  tx: Tx,
+  args: Parameters<typeof findOrCreateTicketRaw>[1],
+): Promise<{ ticket: Ticket; created: boolean }> {
+  const result = await findOrCreateTicketRaw(tx, args);
+  let ticket = result.ticket;
+  // A merged ticket forwards to the one it went into.
+  for (let hops = 0; ticket.mergedIntoId && hops < 5; hops++) {
+    const [next] = await tx.select().from(tickets).where(eq(tickets.id, ticket.mergedIntoId)).limit(1);
+    if (!next) break;
+    ticket = next;
+  }
+  return { ticket, created: result.created };
+}
+
+async function findOrCreateTicketRaw(
   tx: Tx,
   args: {
     inReplyTo: string | null;
@@ -267,10 +395,13 @@ async function findOrCreateTicket(
     gmailThreadId: string | null;
     subject: string;
     sender: { email: string; name: string | null };
+    /** Who the ticket is for: the sender, or the original author of a forward. */
+    requester: { email: string; name: string | null };
     direction: "inbound" | "outbound";
     sentAt: Date;
+    imported: boolean;
   },
-) {
+): Promise<{ ticket: Ticket; created: boolean }> {
   const candidateIds = [args.inReplyTo, ...args.refs].filter(
     (v): v is string => Boolean(v),
   );
@@ -288,7 +419,7 @@ async function findOrCreateTicket(
         .from(tickets)
         .where(eq(tickets.id, hit.ticketId))
         .limit(1);
-      if (t) return { ...t, created: false };
+      if (t) return { ticket: t, created: false };
     }
   }
 
@@ -300,7 +431,7 @@ async function findOrCreateTicket(
       .from(tickets)
       .where(eq(tickets.number, tagged))
       .limit(1);
-    if (t) return { ...t, created: false };
+    if (t) return { ticket: t, created: false };
   }
 
   // 3. Gmail's own threadId.
@@ -310,7 +441,7 @@ async function findOrCreateTicket(
       .from(tickets)
       .where(eq(tickets.gmailThreadId, args.gmailThreadId))
       .limit(1);
-    if (t) return { ...t, created: false };
+    if (t) return { ticket: t, created: false };
   }
 
   // 4. New ticket.
@@ -318,10 +449,13 @@ async function findOrCreateTicket(
     .insert(tickets)
     .values({
       subject: stripReplyPrefix(args.subject) || args.subject,
-      requesterEmail: args.sender.email,
-      requesterName: args.sender.name,
+      requesterEmail: args.requester.email,
+      requesterName: args.requester.name,
       gmailThreadId: args.gmailThreadId,
+      // "Opened" is when the email was sent, not when we happened to fetch it.
+      createdAt: args.sentAt,
       lastMessageAt: args.sentAt,
+      imported: args.imported,
       status: "open",
     })
     .returning();
@@ -330,12 +464,35 @@ async function findOrCreateTicket(
     ticketId: created.id,
     kind: "created",
     data: { via: "email", from: args.sender.email },
+    createdAt: args.sentAt,
   });
 
-  return { ...created, created: true };
+  return { ticket: created, created: true };
 }
 
 /* ----------------------------------------------------------- attachments */
+
+/**
+ * Vercel Blob stores are either private or public, and each only accepts its
+ * own kind of upload. Try private first (attachments can be sensitive), fall
+ * back to public, and remember which one worked.
+ */
+let blobAccess: "private" | "public" | null = null;
+
+async function putAttachment(path: string, body: Buffer, contentType: string) {
+  const order: ("private" | "public")[] = blobAccess ? [blobAccess] : ["private", "public"];
+  let lastError: unknown;
+  for (const access of order) {
+    try {
+      const blob = await put(path, body, { access, addRandomSuffix: true, contentType });
+      blobAccess = access;
+      return blob;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
 
 async function storeAttachments(messageId: string, parsed: Email) {
   const list = parsed.attachments ?? [];
@@ -350,11 +507,11 @@ async function storeAttachments(messageId: string, parsed: Email) {
           ? Buffer.from(att.content)
           : Buffer.from(att.content as unknown as string, "utf8");
 
-      const blob = await put(`messages/${messageId}/${filename}`, body, {
-        access: "public",
-        addRandomSuffix: true,
-        contentType: att.mimeType || "application/octet-stream",
-      });
+      const blob = await putAttachment(
+        `messages/${messageId}/${filename}`,
+        body,
+        att.mimeType || "application/octet-stream",
+      );
 
       await db.insert(attachments).values({
         messageId,
@@ -370,6 +527,7 @@ async function storeAttachments(messageId: string, parsed: Email) {
 }
 
 export const __test = {
+  forwardedSender,
   realSender,
   stripReplyPrefix,
   referenceIds,

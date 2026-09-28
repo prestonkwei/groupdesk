@@ -26,6 +26,7 @@ import {
   StatusIcon,
 } from "@/components/ui/ticket-icons";
 import { AgeBadge } from "@/components/ui/age-badge";
+import { SlaPill } from "@/components/ui/sla-pill";
 import { Kbd } from "@/components/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -423,6 +424,7 @@ export function TicketList({
                     <span className="block size-6 rounded-full border border-dashed border-[var(--input)]" />
                   )}
                 </span>
+                {t.replyDueAt && <SlaPill dueAt={t.replyDueAt} className="hidden md:inline-flex" />}
                 <AgeBadge
                   since={t.createdAt}
                   resolved={!unsolved}
@@ -468,7 +470,7 @@ export function TicketList({
               onOpenChange={(o) => setBulkPicker(o ? "status" : null)}
               placeholder="Set status…"
               selected={[common((r) => r.status) ?? ""]}
-              items={STATUSES.map((s) => ({ value: s.value, label: s.label, icon: <StatusIcon status={s.value} /> }))}
+              items={STATUSES.map((s) => ({ value: s.value, label: s.label, hint: s.hint, icon: <StatusIcon status={s.value} /> }))}
               onSelect={(v) => apply({ kind: "status", status: v as TicketStatus })}
               trigger={<BarButton k="c" icon={<StatusIcon status={common((r) => r.status) ?? "open"} />}>Status</BarButton>}
             />

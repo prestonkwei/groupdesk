@@ -17,3 +17,12 @@ export function ticketNumberFromSubject(subject: string | null | undefined): num
 export function stripTicketTag(subject: string) {
   return subject.replace(TAG_RE, "").trim();
 }
+
+/** Subject markers for our own automated mail; ingest ignores replies to it. */
+export const DIGEST_TAG = "[helpdesk digest]";
+export const NOTICE_TAG = "[helpdesk notice]";
+
+export function isDigestSubject(subject: string | null | undefined) {
+  const s = subject?.toLowerCase() ?? "";
+  return s.includes(DIGEST_TAG.toLowerCase()) || s.includes(NOTICE_TAG.toLowerCase());
+}

@@ -11,6 +11,7 @@ const GROUPS: { title: string; keys: [string, string][] }[] = [
     keys: [
       ["?", "Show this list"],
       ["/", "Search tickets"],
+      ["⇧ c", "New message"],
       ["g then u", "Go to Unsolved"],
       ["g then m", "Go to Assigned to me"],
       ["g then n", "Go to Unassigned"],
@@ -73,6 +74,7 @@ export function GlobalShortcuts() {
         el.select();
       } else router.push("/tickets?focus=search");
     },
+    C: () => router.push("/tickets/new"),
     "g u": () => router.push("/tickets?view=unsolved"),
     "g m": () => router.push("/tickets?view=mine"),
     "g n": () => router.push("/tickets?view=unassigned"),

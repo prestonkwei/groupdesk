@@ -1,4 +1,7 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { tickets } from "@/db/schema";
 import Link from "next/link";
 import { ArrowLeft, ChevronDown, ChevronUp } from "lucide-react";
 import { requireAgent } from "@/lib/auth";
@@ -10,6 +13,8 @@ import {
   listTeams,
   neighbours,
   replyRecipients,
+  listTemplates,
+  requesterHistory,
   ticketAssigneeIds,
   ticketTagIds,
 } from "@/lib/queries";
@@ -17,9 +22,13 @@ import { taggedSubject } from "@/lib/ticket-subject";
 import { photosFor } from "@/lib/people";
 import { env } from "@/lib/env";
 import { Thread } from "@/components/thread";
+import { RequesterHistory } from "@/components/requester-history";
+import { RequesterCard } from "@/components/requester-card";
+import { TicketMenu } from "@/components/ticket-menu";
 import { Composer } from "@/components/composer";
 import {
   MobileDetails,
+  PresenceBar,
   StarButton,
   TicketHotkeys,
   TicketProperties,
@@ -29,7 +38,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { VIP_RING, VipMark } from "@/components/ui/badge";
 import { isVipTag } from "@/lib/vip-tag";
 import { AgeBadge } from "@/components/ui/age-badge";
-import { LiveRefresh } from "@/components/live-refresh";
+import { SlaPill } from "@/components/ui/sla-pill";
+import { replyDueAt } from "@/lib/sla";
 import { cn, dateTime, relativeTime, shortDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -47,8 +57,16 @@ export default async function TicketPage({
 
   const ticket = await getTicketByNumber(n, agent);
   if (!ticket) notFound();
+  if (ticket.mergedIntoId) {
+    const [target] = await db
+      .select({ number: tickets.number })
+      .from(tickets)
+      .where(eq(tickets.id, ticket.mergedIntoId))
+      .limit(1);
+    if (target) redirect(`/tickets/${target.number}`);
+  }
 
-  const [thread, agentList, teamList, tagList, activeTagIds, assigneeIds, nav] =
+  const [thread, agentList, teamList, tagList, activeTagIds, assigneeIds, nav, history, templateList] =
     await Promise.all([
       getThread(ticket.id),
       listAgents(true),
@@ -57,6 +75,8 @@ export default async function TicketPage({
       ticketTagIds(ticket.id),
       ticketAssigneeIds(ticket.id),
       neighbours(ticket),
+      requesterHistory(ticket.requesterEmail, ticket.id),
+      listTemplates(),
     ]);
 
   const photos = await photosFor([
@@ -65,12 +85,39 @@ export default async function TicketPage({
     ...thread.messages.map((m) => m.authorEmail ?? m.fromEmail),
   ]);
   const photo = (email: string) => photos[email.toLowerCase()] ?? null;
+
+  // Reply target: the requester's first unanswered email, if the ticket is open.
+  const lastOut = thread.messages.filter((m) => m.direction === "outbound").at(-1)?.sentAt;
+  const waiting =
+    ticket.status === "open"
+      ? thread.messages.find((m) => m.direction === "inbound" && (!lastOut || m.sentAt > lastOut))?.sentAt
+      : undefined;
+  const dueAt = waiting ? replyDueAt(new Date(waiting), ticket.priority) : null;
   const requesterLabel = ticket.requesterName || ticket.requesterEmail;
   const vip = tagList.some((t) => isVipTag(t) && activeTagIds.includes(t.id));
   const recipients = replyRecipients(ticket, thread.messages, {
     group: env.groupEmail,
     mailbox: env.gmailMailbox,
   });
+
+  // People on this ticket's emails (not us), for "Change requester".
+  const ours = new Set([
+    env.groupEmail.toLowerCase(),
+    env.gmailMailbox.toLowerCase(),
+    ...agentList.map((a) => a.email.toLowerCase()),
+  ]);
+  const participantMap = new Map<string, { email: string; name: string | null; photo: string | null }>();
+  for (const m of thread.messages) {
+    if (m.direction === "note") continue;
+    for (const e of [m.fromEmail, ...m.toEmails, ...m.ccEmails]) {
+      const key = e.toLowerCase();
+      if (ours.has(key)) continue;
+      const name = key === m.fromEmail.toLowerCase() ? m.fromName : null;
+      const prev = participantMap.get(key);
+      if (!prev || (!prev.name && name)) participantMap.set(key, { email: key, name, photo: photo(key) });
+    }
+  }
+  const participants = [...participantMap.values()];
 
   // Everyone who has appeared on this ticket, plus the agents, for the
   // To/Cc/Bcc suggestions.
@@ -112,7 +159,6 @@ export default async function TicketPage({
       teams={teamList.map((t) => ({ id: t.id, name: t.name }))}
       tags={tagList.map((t) => ({ id: t.id, name: t.name, color: t.color }))}
     >
-      <LiveRefresh intervalMs={5000} />
       <TicketHotkeys newer={nav.newer} older={nav.older} />
 
       <div className="flex h-[calc(100dvh-3rem)]">
@@ -137,19 +183,28 @@ export default async function TicketPage({
             <span className="ml-1 text-xs tabular-nums text-[var(--muted-foreground)]">
               #{ticket.number}
             </span>
-            <div className="ml-auto">
+            <div className="ml-auto flex min-w-0 items-center gap-2">
+              <PresenceBar />
               <StarButton />
+              <TicketMenu ticketId={ticket.id} number={ticket.number} />
             </div>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <MobileDetails>
-              <p className="text-xs text-[var(--muted-foreground)]">
-                Requester:{" "}
-                <a href={`mailto:${ticket.requesterEmail}`} className="hover:underline">
-                  {ticket.requesterEmail}
-                </a>
-              </p>
+              <div>
+                <p className="mb-2 text-xs text-[var(--muted-foreground)]">Requester</p>
+                <RequesterCard
+                  compact
+                  ticketId={ticket.id}
+                  name={ticket.requesterName}
+                  email={ticket.requesterEmail}
+                  photo={photo(ticket.requesterEmail)}
+                  contacts={participants}
+                  vip={vip}
+                />
+              </div>
+              <RequesterHistory email={ticket.requesterEmail} {...history} />
             </MobileDetails>
             <div className="mx-auto w-full max-w-3xl px-4 pt-5 sm:px-6 sm:pt-6">
               <h1 className="text-lg font-semibold leading-snug tracking-tight sm:text-xl">
@@ -175,12 +230,20 @@ export default async function TicketPage({
                 <span>
                   {thread.messages.filter((m) => m.direction !== "note").length} messages
                 </span>
+                {dueAt && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <SlaPill dueAt={dueAt} />
+                  </>
+                )}
               </p>
             </div>
             <Thread messages={thread.messages} events={thread.events} photos={photos} />
           </div>
 
           <Composer
+            // Changing the requester changes the default To, so start fresh.
+            key={ticket.requesterEmail}
             ticketId={ticket.id}
             subject={taggedSubject(ticket.number, ticket.subject)}
             fromName={agent.name}
@@ -189,6 +252,12 @@ export default async function TicketPage({
             defaultTo={recipients.to}
             defaultCc={recipients.cc}
             contacts={[...contacts.values()]}
+            templates={templateList.map((t) => ({ id: t.id, name: t.name, bodyHtml: t.bodyHtml }))}
+            ticketNumber={ticket.number}
+            ticketSubject={ticket.subject}
+            agents={agentList
+              .filter((a) => a.id !== agent.id)
+              .map((a) => ({ id: a.id, name: a.name, email: a.email }))}
           />
         </div>
 
@@ -199,27 +268,14 @@ export default async function TicketPage({
 
           <div className="p-4">
             <p className="mb-3 text-xs font-medium text-[var(--muted-foreground)]">Requester</p>
-            <div className="flex items-center gap-3">
-              <Avatar
-                name={ticket.requesterName}
-                email={ticket.requesterEmail}
-                photo={photo(ticket.requesterEmail)}
-                size="lg"
-                className={cn(vip && VIP_RING)}
-              />
-              <div className="min-w-0">
-                <p className="flex items-center gap-1 text-sm font-medium">
-                  <span className="truncate">{requesterLabel}</span>
-                  {vip && <VipMark />}
-                </p>
-                <a
-                  href={`mailto:${ticket.requesterEmail}`}
-                  className="block truncate text-xs text-[var(--muted-foreground)] hover:underline"
-                >
-                  {ticket.requesterEmail}
-                </a>
-              </div>
-            </div>
+            <RequesterCard
+              ticketId={ticket.id}
+              name={ticket.requesterName}
+              email={ticket.requesterEmail}
+              photo={photo(ticket.requesterEmail)}
+              contacts={participants}
+              vip={vip}
+            />
 
             <dl className="mt-5 grid grid-cols-[76px_1fr] gap-x-2 gap-y-2 text-xs">
               <dt className="text-[var(--muted-foreground)]">Opened</dt>
@@ -231,6 +287,10 @@ export default async function TicketPage({
                 {shortDate(ticket.lastMessageAt)} · {relativeTime(ticket.lastMessageAt)}
               </dd>
             </dl>
+          </div>
+
+          <div className="border-t border-[var(--border)] p-4">
+            <RequesterHistory email={ticket.requesterEmail} {...history} />
           </div>
         </aside>
       </div>

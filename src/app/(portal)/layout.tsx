@@ -1,11 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { canManageGmail, requireAgent } from "@/lib/auth";
-import { listTags, listTeams, viewCounts } from "@/lib/queries";
+import { listSavedViews, listTags, listTeams, viewCounts } from "@/lib/queries";
 import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { photosFor } from "@/lib/people";
-import { Avatar } from "@/components/ui/avatar";
+import { UserMenu } from "@/components/user-menu";
+import { env } from "@/lib/env";
 import { GlobalShortcuts } from "@/components/shortcuts";
 
 export default async function PortalLayout({
@@ -14,11 +15,12 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const { agent } = await requireAgent();
-  const [counts, teams, tags, photos] = await Promise.all([
+  const [counts, teams, tags, photos, views] = await Promise.all([
     viewCounts(agent),
     listTeams(),
     listTags(),
     photosFor([agent.email]),
+    listSavedViews(agent.id),
   ]);
 
   const sidebar = {
@@ -27,6 +29,7 @@ export default async function PortalLayout({
     tags: tags.map((t) => ({ name: t.name, slug: t.slug, color: t.color })),
     isAdmin: agent.role === "admin",
     canManageGmail: canManageGmail(agent),
+    savedViews: views,
   };
 
   return (
@@ -40,15 +43,13 @@ export default async function PortalLayout({
         </Link>
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
           <GlobalShortcuts />
-          <span className="flex items-center gap-2">
-            <span className="hidden sm:inline">{agent.name}</span>
-            <Avatar
-              name={agent.name}
-              email={agent.email}
-              photo={photos[agent.email.toLowerCase()]}
-              size="sm"
-            />
-          </span>
+          <UserMenu
+            name={agent.name}
+            email={agent.email}
+            photo={photos[agent.email.toLowerCase()] ?? null}
+            logoutUrl={env.cfTeamDomain && env.cfAud ? "/cdn-cgi/access/logout" : null}
+            notifyEmail={agent.notifyEmail}
+          />
         </div>
       </header>
 

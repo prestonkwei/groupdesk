@@ -1,0 +1,33 @@
+name: Gmail catch-up sync
+
+# Belt and braces for dropped Pub/Sub pushes. The portal also catches up on
+# its own whenever someone has it open; this covers nights and weekends.
+# Needs the repository secret CRON_SECRET (same value as in Vercel). Without
+# it the job just skips.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: gmail-reconcile
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Call the reconcile endpoint
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL || 'https://tickets.example.org' }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::CRON_SECRET repository secret not set; skipping."
+            exit 0
+          fi
+          curl --fail-with-body -sS -m 90 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/gmail-reconcile"
