@@ -4,7 +4,8 @@ import { desc, eq, isNotNull, and } from "drizzle-orm";
 import { db } from "@/db";
 import { messages, tickets, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
-import { taggedSubject, ticketNumberFromSubject } from "@/lib/ticket-subject";
+import { taggedSubject } from "@/lib/ticket-subject";
+import { TIME_ZONE } from "@/lib/utils";
 import { gmailFor } from "./client";
 
 export type SentReply = {
@@ -39,25 +40,21 @@ export async function sendReply(args: {
   if (!ticket) throw new Error("Ticket not found");
 
   /*
-   * Gmail titles a conversation after its first message, so a reply threaded
-   * onto the requester's original email keeps their untagged subject on
-   * screen. Instead, the first reply starts a fresh conversation titled
-   * "[TICKET: #n] …", and later replies thread onto the latest message in that
-   * tagged conversation. Replies to it come back with the tag (and our
-   * Message-IDs in References), so ingest still files them on this ticket.
+   * Thread onto the latest email in the ticket (inbound or ours), whatever its
+   * subject: In-Reply-To/References plus the Gmail threadId keep the reply in
+   * the requester's existing conversation, and the tagged subject still lets
+   * ingest file any answer on this ticket.
    */
-  const candidates = await db
+  const [last] = await db
     .select()
     .from(messages)
     .where(and(eq(messages.ticketId, ticket.id), isNotNull(messages.rfcMessageId)))
     .orderBy(desc(messages.sentAt))
-    .limit(50);
-  const last =
-    candidates.find((m) => ticketNumberFromSubject(m.subject) === ticket.number) ?? null;
+    .limit(1);
 
   const { client } = await gmailFor();
 
-  // Keep our own mailbox's copy in the same tagged conversation too.
+  // Keep our own mailbox's copy in the same conversation too.
   let threadId: string | undefined;
   if (last?.gmailMessageId) {
     const { data } = await client.users.messages
@@ -65,6 +62,7 @@ export async function sendReply(args: {
       .catch(() => ({ data: { threadId: undefined as string | null | undefined } }));
     threadId = data.threadId ?? undefined;
   }
+  threadId ??= ticket.gmailThreadId ?? undefined;
 
   const subject = taggedSubject(ticket.number, ticket.subject);
 
@@ -93,13 +91,23 @@ export async function sendReply(args: {
   }
 
   const body = `${args.bodyText.trim()}\n\n--\n${args.agent.name}\nhelpdesk\n`;
-  msg.addMessage({ contentType: "text/plain", encoding: "base64", data: base64Lines(body) });
+  const quote = last ? quoteOf(last) : null;
+  msg.addMessage({
+    contentType: "text/plain",
+    encoding: "base64",
+    data: base64Lines(quote ? `${body}\n${quote.text}` : body),
+  });
 
-  const html = args.bodyHtml
-    ? `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2328">${cleanHtml(args.bodyHtml)}` +
-      `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>helpdesk</p></div>`
-    : null;
-  if (html) msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
+  // Always send HTML so the quoted history renders (and collapses) like a
+  // normal Gmail reply. The portal hides .gmail_quote the same way.
+  const content = args.bodyHtml
+    ? cleanHtml(args.bodyHtml)
+    : escapeHtml(args.bodyText.trim()).replace(/\n/g, "<br>");
+  const html =
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1f2328">${content}` +
+    `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>helpdesk</p></div>` +
+    (quote?.html ?? "");
+  msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
 
   const raw = Buffer.from(msg.asRaw()).toString("base64url");
 
@@ -160,6 +168,39 @@ export async function sendReply(args: {
     .where(eq(tickets.id, ticket.id));
 
   return { gmailMessageId: sent.id, rfcMessageId, messageRowId: row.id };
+}
+
+type QuotedMessage = Pick<
+  typeof messages.$inferSelect,
+  "fromName" | "fromEmail" | "sentAt" | "bodyText" | "bodyHtml"
+>;
+
+const quoteDate = new Intl.DateTimeFormat("en-US", {
+  timeZone: TIME_ZONE,
+  weekday: "short",
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** "On <date>, <sender> wrote:" plus the previous email, as Gmail quotes it. */
+function quoteOf(m: QuotedMessage) {
+  const who = m.fromName ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail;
+  const attribution = `On ${quoteDate.format(m.sentAt)}, ${who} wrote:`;
+  const text = `${attribution}\n${(m.bodyText ?? "")
+    .trimEnd()
+    .split(/\r?\n/)
+    .map((l) => `> ${l}`)
+    .join("\n")}\n`;
+  const inner = m.bodyHtml
+    ? cleanHtml(m.bodyHtml).replace(/<!doctype[^>]*>|<\/?(html|head|body)[^>]*>|<title>[\s\S]*?<\/title>/gi, "")
+    : escapeHtml(m.bodyText ?? "").replace(/\n/g, "<br>");
+  const html =
+    `<br><div class="gmail_quote"><div dir="ltr" class="gmail_attr">${escapeHtml(attribution)}<br></div>` +
+    `<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid #ccc;padding-left:1ex">${inner}</blockquote></div>`;
+  return { text, html };
 }
 
 /** Base64 in 76-character lines, so non-ASCII text and long HTML lines survive transit. */
