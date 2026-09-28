@@ -1,3 +1,4 @@
+import { env } from "@/lib/env";
 import { cronAuthorized } from "@/lib/cron-auth";
 import { startWatch } from "@/lib/gmail/sync";
 import { getSyncRow } from "@/lib/gmail/client";
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
         (row.watchExpiration
           ? ` at ${row.watchExpiration.toISOString()}.`
           : ".") +
-        `\nReconnect at ${process.env.APP_URL ?? ""}/admin/gmail`,
+        `\nReconnect at ${env.appUrl}/admin/gmail`,
     );
     return new Response(message, { status: 500 });
   }
