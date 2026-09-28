@@ -22,6 +22,13 @@ export type IngestResult =
   | { status: "skipped"; reason: string }
   | { status: "ingested"; ticketId: string; ticketNumber: number; messageId: string; newTicket: boolean };
 
+/** HTTP status of a Google API error (gaxios puts it in a few places). */
+export function httpStatus(err: unknown): number | undefined {
+  const e = err as { code?: unknown; status?: unknown; response?: { status?: number } };
+  const n = Number(e?.response?.status ?? e?.status ?? e?.code);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /* -------------------------------------------------------------- header help */
 
 function headerValue(email: Email, name: string): string | undefined {
@@ -156,11 +163,21 @@ export async function ingestGmailMessage(
     return { status: "skipped", reason: "already ingested (gmail id)" };
   }
 
-  const { data } = await client.users.messages.get({
-    userId: "me",
-    id: gmailMessageId,
-    format: "raw",
-  });
+  let data;
+  try {
+    ({ data } = await client.users.messages.get({
+      userId: "me",
+      id: gmailMessageId,
+      format: "raw",
+    }));
+  } catch (err) {
+    // History lists messages that are gone by the time we ask: a draft that
+    // was sent or discarded, or mail deleted right away. Nothing to ingest.
+    if (httpStatus(err) === 404) {
+      return { status: "skipped", reason: "no longer in Gmail (deleted or a draft)" };
+    }
+    throw err;
+  }
 
   if (!data.raw) return { status: "skipped", reason: "no raw payload" };
 

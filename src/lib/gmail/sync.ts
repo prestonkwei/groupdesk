@@ -4,13 +4,15 @@ import { db } from "@/db";
 import { gmailSync } from "@/db/schema";
 import { env } from "@/lib/env";
 import { gmailFor, recordError, resolveLabelId, type GmailClient } from "./client";
-import { ingestGmailMessage } from "./ingest";
+import { httpStatus, ingestGmailMessage } from "./ingest";
 
 export type SyncSummary = {
   email: string;
   scanned: number;
   ingested: number;
   skipped: number;
+  /** Messages that errored in a way retrying won't fix; logged and passed over. */
+  failed: number;
   fullResync: boolean;
   newHistoryId: string | null;
 };
@@ -159,9 +161,22 @@ async function fullResync(
   };
 }
 
+/**
+ * Worth failing the whole sync over (so Pub/Sub or the next catch-up retries
+ * from the same cursor): rate limits, Google/network hiccups, a busy database.
+ * Anything else is specific to one message and must not wedge the queue.
+ */
+function isTransient(err: unknown) {
+  const status = httpStatus(err);
+  if (status === 429 || (status !== undefined && status >= 500)) return true;
+  const text = String((err as { code?: unknown; message?: unknown })?.code ?? "") + " " + String((err as Error)?.message ?? err);
+  return /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|fetch failed|lock timeout|deadlock|rate ?limit|rateLimitExceeded|quota/i.test(text);
+}
+
 async function ingestAll(client: GmailClient, ids: string[]) {
   let ingested = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const id of ids) {
     try {
@@ -170,11 +185,14 @@ async function ingestAll(client: GmailClient, ids: string[]) {
       else skipped++;
     } catch (err) {
       console.error(`ingest failed for gmail message ${id}`, err);
-      throw err;
+      if (isTransient(err)) throw err;
+      // A message that can't be ingested is logged and passed over, so the
+      // cursor still advances and everything after it keeps flowing.
+      failed++;
     }
   }
 
-  return { scanned: ids.length, ingested, skipped };
+  return { scanned: ids.length, ingested, skipped, failed };
 }
 
 /* ----------------------------------------------------------------- watch */
