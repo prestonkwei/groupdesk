@@ -53,7 +53,7 @@ export function Avatar({
         alt=""
         referrerPolicy="no-referrer"
         onError={() => setBroken(true)}
-        className={cn("shrink-0 rounded-full object-cover", SIZES[size], className)}
+        className={cn("shrink-0 rounded-full object-cover object-top", SIZES[size], className)}
       />
     );
   }
