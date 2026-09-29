@@ -28,6 +28,42 @@ VIP), but nothing depends on it being a school.
 | Login | Cloudflare Access, JWT verified with `jose` in `src/proxy.ts` |
 | Mail | `@googleapis/gmail`, `postal-mime` to parse, `mimetext` to compose |
 
+## Using it
+
+### Ticket statuses
+
+| Status | Meaning | How it gets there |
+| --- | --- | --- |
+| **Open** | Waiting on us | New mail, or the requester writes back on any other status |
+| **Pending** | Waiting on the requester | Replying to an open ticket |
+| **Solved** | Done | By hand, or auto-solved after `AUTO_SOLVE_DAYS` pending with no reply |
+| **Closed** | Not a request (notifications, spam, merged tickets) | By hand, by merging or marking as spam, or new mail from a blocked sender. Never on a timer; left out of reports |
+
+A reply from the requester reopens the ticket whatever its status, as long as
+it's the newest email on it. Older mail that arrives late (from a catch-up or
+backfill) never changes the status.
+
+### Agents and admins
+
+There are two roles. **Agents** work tickets, write templates and can mark
+senders as spam. **Admins** also manage agents, teams and tags, unblock
+senders, refresh directory photos, and see reports. Only the admin whose
+address is `GMAIL_MAILBOX` can connect or reconnect Gmail.
+
+Add people at **Admin → Agents**. They also have to be allowed through
+Cloudflare Access. Anyone who gets through Access without being an active
+agent is refused. Deactivating an agent keeps their name on past tickets.
+
+### Keyboard shortcuts
+
+Press `?` anywhere for the full list.
+
+| Where | Keys |
+| --- | --- |
+| Anywhere | `/` search · `⇧C` new message · `g` then `u` / `m` / `n` / `s` / `a` for Unsolved, Mine, Unassigned, Starred, All |
+| Ticket list | `j` / `k` move · `Enter` open · `s` star · `i` assign to me · `x` select (`⇧X` range), then `a` `p` `c` `t` `m` to assign, prioritise, change status, tag or move team |
+| Ticket | `r` reply · `n` note · `⌘Enter` send · `e` solve · `a` `p` `c` `t` `m` as above · `j` / `k` next and previous ticket · `u` or `Esc` back |
+
 ## How mail becomes a ticket
 
 ```
@@ -58,6 +94,17 @@ speed; the cron gives the guarantee that a dropped push costs minutes rather
 than a lost ticket.
 
 ## Setup
+
+### Requirements
+
+- Node.js 20.9 or newer, and pnpm 11 (`corepack enable` gets you the version
+  pinned in `package.json`)
+- A Google Workspace domain where you can create a Google Group and an
+  Internal OAuth app
+- A Google Cloud project (Gmail API, Pub/Sub)
+- A Neon Postgres database
+- Vercel for hosting, cron and attachment storage (Blob)
+- Cloudflare Access in front of the app, for sign-in
 
 You need a Google Workspace domain with a Google Group for requesters to write
 to, and one mailbox in that domain that receives the group's mail. Every
@@ -219,6 +266,10 @@ Two more scheduled jobs:
 
 The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
 
+When a watch renewal, catch-up sync or digest fails, the app sends an alert to
+`SLACK_WEBHOOK_URL` and/or `ALERT_EMAIL_TO` if either is set. Otherwise the
+failure only shows up in the server log.
+
 ## Security notes
 
 - **Email HTML is untrusted.** Message bodies render inside an iframe with an
@@ -234,6 +285,26 @@ The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
 
 To report a vulnerability, please use GitHub's private vulnerability reporting
 on this repository rather than a public issue.
+
+## Data model
+
+All tables are defined in `src/db/schema.ts`. The migrations in `drizzle/`
+are generated from it with `pnpm db:generate`.
+
+| Table | Holds |
+| --- | --- |
+| `tickets` | Number (from a sequence), subject, requester, status, priority, team, Gmail thread, and whether it came from the backfill |
+| `messages` | Every email in and out, plus internal notes, with Gmail and RFC 822 ids for threading; `gmail_message_id` is unique |
+| `attachments` | Files in Vercel Blob, with Content-IDs so inline images render in place |
+| `events` | The activity log on each ticket: status, assignment, tags, merges, survey results |
+| `agents`, `teams`, `agent_teams` | Who can sign in, their role, and team membership |
+| `tags`, `ticket_tags`, `ticket_assignees`, `ticket_stars` | Tags, multiple assignees, and per-agent stars |
+| `templates`, `saved_views` | Shared reply templates and per-agent saved filters |
+| `csat_surveys` | One row per survey email; its token is the requester's only credential |
+| `people` | Cached names and photos from the directory, refreshed weekly |
+| `ticket_presence` | Who has a ticket open or is typing (unlogged, disposable) |
+| `blocked_senders` | Senders marked as spam |
+| `gmail_sync` | The connected mailbox, encrypted refresh token, watch expiry and history cursor |
 
 ## Layout
 
@@ -268,6 +339,38 @@ pnpm gmail:sync     # run the ingest pipeline by hand
 pnpm gmail:watch    # start or renew the Gmail watch
 pnpm gmail:backfill # import past group mail
 ```
+
+## Troubleshooting
+
+Start at `/admin/gmail`. It shows whether the mailbox is connected, when the
+watch expires, the last push and sync, the last error, and which address
+replies go out from.
+
+- **No new tickets.** Check that the Gmail filter actually applies the label
+  (the name must match `GMAIL_LABEL_NAME` exactly), that the watch hasn't
+  expired, and that "Last push received" moves when mail arrives. If it
+  doesn't and the Pub/Sub subscription shows deliveries failing with 401,
+  the subscription's audience doesn't match `GMAIL_PUSH_AUDIENCE`, or its
+  service account isn't `GMAIL_PUSH_SA_EMAIL`.
+- **Gmail disconnects after a week.** The OAuth consent screen is External in
+  Testing mode, whose refresh tokens expire after 7 days. Make it Internal and
+  reconnect.
+- **Replies come from the mailbox, not the group.** `GROUP_EMAIL` isn't a
+  verified "Send mail as" alias in that mailbox yet. `/admin/gmail` says which.
+- **"Not authorized" after signing in.** The person passed Cloudflare Access
+  but isn't an active agent. Add them at Admin → Agents.
+- **Pushes, crons or survey links are blocked.** They need the Cloudflare
+  Access Bypass policies for `/api/gmail/push`, `/api/cron/*` and `/csat/*`.
+- **A changed `NEXT_PUBLIC_*` value doesn't show up.** These are baked in at
+  build time, so redeploy.
+- **Missed mail.** `pnpm gmail:sync` (or "Sync now" on `/admin/gmail`) runs the
+  catch-up by hand. Syncing is idempotent, so it's always safe to run.
+
+## Contributing
+
+Issues and pull requests are welcome. Run `pnpm test` (typecheck, lint and the
+offline ingest checks) before sending a change. For schema changes, edit
+`src/db/schema.ts` and commit the migration `pnpm db:generate` produces.
 
 ## License
 
