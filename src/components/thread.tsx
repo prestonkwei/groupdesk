@@ -12,14 +12,14 @@ type Item =
   | { kind: "message"; at: Date; message: ThreadMessage }
   | { kind: "events"; at: Date; events: ThreadEvent[] };
 
-function describe(e: ThreadEvent): string {
+function describe(e: ThreadEvent, names: Map<string, string>): string {
   const who = e.actorName ?? "Someone";
   const d = e.data as Record<string, string | undefined>;
   switch (e.kind) {
     case "created":
       return "opened this ticket by email";
     case "reopened":
-      return `reopened by a new reply from ${d.by ?? "the requester"}`;
+      return `reopened by a new reply from ${names.get(d.by?.toLowerCase() ?? "") ?? d.by ?? "the requester"}`;
     case "assigned":
       return `${who} assigned ${d.assigneeName ?? "someone"}`;
     case "unassigned":
@@ -30,7 +30,7 @@ function describe(e: ThreadEvent): string {
       }
       return `${who} set status to ${d.to}`;
     case "priority":
-      return `${who} set priority to ${d.to}`;
+      return `${who} set priority to ${d.to && d.to !== "none" ? d.to.toUpperCase() : d.to}`;
     case "team":
       return d.teamName ? `${who} moved to ${d.teamName}` : `${who} cleared the team`;
     case "requester":
@@ -75,18 +75,46 @@ function snippet(m: ThreadMessage) {
   return text.replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
+/**
+ * "@Kat", "@Kat Sakowitz" or "@ksakowitz" for any agent: the same forms that
+ * send a mention email (lib/notify.ts). Longest first, so a full name wins.
+ */
+function mentionPattern(agents: { name: string; email: string }[]) {
+  const names = agents
+    .flatMap((a) => [a.name, a.name.split(/\s+/)[0], a.email.split("@")[0]])
+    .map((n) => n.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  return names.length ? new RegExp(`(^|[\\s(]|&nbsp;)(@(?:${names.join("|")}))(?![\\w-])`, "gi") : null;
+}
+
+/** Wraps mentions in a note's text (never inside a tag) so they stand out. */
+function highlightMentions(html: string, pattern: RegExp | null) {
+  if (!pattern) return html;
+  return html
+    .split(/(<[^>]*>)/)
+    .map((part) => (part.startsWith("<") ? part : part.replace(pattern, '$1<span class="mention">$2</span>')))
+    .join("");
+}
 
 export function Thread({
   messages,
   events,
   photos,
+  agents,
 }: {
   messages: ThreadMessage[];
   events: ThreadEvent[];
   photos: PhotoMap;
+  agents: { name: string; email: string }[];
 }) {
   // "created" just restates the first message, so it isn't shown.
   const visibleEvents = events.filter((e) => e.kind !== "created");
+  const mentions = mentionPattern(agents);
+
+  // Some events only record an address; show the name from their emails.
+  const names = new Map<string, string>();
+  for (const m of messages) if (m.fromName) names.set(m.fromEmail.toLowerCase(), m.fromName);
 
   const sorted = [
     ...messages.map((m) => ({ kind: "message" as const, at: m.sentAt, message: m })),
@@ -149,7 +177,7 @@ export function Thread({
                 {item.events.map((e, i) => (
                   <span key={e.id}>
                     {i > 0 && " · "}
-                    {describe(e)}
+                    {describe(e, names)}
                   </span>
                 ))}
                 <span className="ml-1.5 opacity-70">{relativeTime(item.at)}</span>
@@ -162,6 +190,7 @@ export function Thread({
                 photo={photos[(item.message.authorEmail ?? item.message.fromEmail).toLowerCase()]}
                 open={expanded.has(item.message.id)}
                 onToggle={() => toggle(item.message.id)}
+                mentions={mentions}
               />
             </li>
           ),
@@ -224,11 +253,13 @@ function MessageCard({
   photo,
   open,
   onToggle,
+  mentions,
 }: {
   message: ThreadMessage;
   photo: string | null | undefined;
   open: boolean;
   onToggle: () => void;
+  mentions: RegExp | null;
 }) {
   const isNote = m.direction === "note";
   const isOutbound = m.direction === "outbound";
@@ -313,7 +344,7 @@ function MessageCard({
       {open && (
         <div className="px-3 pt-3 pb-4 sm:px-4 sm:pl-[60px]">
           {m.bodyHtml ? (
-            <HtmlBody html={m.bodyHtml} />
+            <HtmlBody html={isNote ? highlightMentions(m.bodyHtml, mentions) : m.bodyHtml} />
           ) : (
             <TextBody text={m.bodyText ?? "(empty message)"} />
           )}

@@ -24,6 +24,7 @@ export function HtmlBody({ html }: { html: string }) {
   p { margin:0 0 .75em; }
   body > *:last-child, p:last-child { margin-bottom:0; }
   a { color:#2554a4; }
+  .mention { color:#2554a4; font-weight:500; }
   img, table { max-width:100% !important; height:auto; }
   blockquote { margin:0 0 0 .25rem; padding-left:.75rem; border-left:2px solid #d0d7de; color:#57606a; }
   pre { white-space:pre-wrap; }

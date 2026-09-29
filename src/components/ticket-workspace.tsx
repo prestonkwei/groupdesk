@@ -365,9 +365,9 @@ export function TicketProperties() {
             mutate({ teamId: id }, () => setTeam(ticketId, id));
           }}
           trigger={
-            <button type="button" className={cn(triggerClass, "group")}>
+            <button type="button" className={cn(triggerClass, "group h-auto min-h-8 py-1.5")}>
               <Users className="size-3.5 shrink-0 text-[var(--muted-foreground)]" />
-              <span className={cn("truncate", !team && "text-[var(--muted-foreground)]")}>
+              <span className={cn("min-w-0 break-words", !team && "text-[var(--muted-foreground)]")}>
                 {team?.name ?? "No team"}
               </span>
               <Hint k="m" />

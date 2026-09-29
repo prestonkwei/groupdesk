@@ -96,6 +96,7 @@ export default async function TicketPage({
       : undefined;
   const dueAt = waiting ? replyDueAt(new Date(waiting), ticket.priority) : null;
   const requesterLabel = ticket.requesterName || ticket.requesterEmail;
+  const emailCount = thread.messages.filter((m) => m.direction !== "note").length;
   const vip = tagList.some((t) => isVipTag(t) && activeTagIds.includes(t.id));
   const recipients = replyRecipients(ticket, thread.messages, {
     group: env.groupEmail,
@@ -230,7 +231,7 @@ export default async function TicketPage({
                 />
                 <span aria-hidden>·</span>
                 <span>
-                  {thread.messages.filter((m) => m.direction !== "note").length} messages
+                  {emailCount} message{emailCount === 1 ? "" : "s"}
                 </span>
                 {dueAt && (
                   <>
@@ -240,7 +241,12 @@ export default async function TicketPage({
                 )}
               </p>
             </div>
-            <Thread messages={thread.messages} events={thread.events} photos={photos} />
+            <Thread
+              messages={thread.messages}
+              events={thread.events}
+              photos={photos}
+              agents={agentList.map((a) => ({ name: a.name, email: a.email }))}
+            />
           </div>
 
           <Composer

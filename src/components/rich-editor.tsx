@@ -27,10 +27,15 @@ type SlashState = {
   kind: "template" | "mention";
   query: string;
   from: number;
-  top: number;
+  /** Set one of these: below the caret, or above it when there's no room below. */
+  top?: number;
+  bottom?: number;
   left: number;
+  maxHeight: number;
   index: number;
 };
+/** Header plus a full max-h-64 list. */
+const MENU_HEIGHT = 290;
 export type MentionOption = { id: string; name: string; email: string };
 
 /**
@@ -106,11 +111,19 @@ export function RichEditor({
     if (!m || (kind === "mention" ? !people : !tpl)) return setSlash(null);
     const coords = editor.view.coordsAtPos($from.pos);
     const box = boxRef.current?.getBoundingClientRect();
+    // The composer usually sits at the bottom of the window: open upward when
+    // there's more room above, and never taller than the room there is.
+    const below = window.innerHeight - coords.bottom - 12;
+    const above = coords.top - 12;
+    const up = below < MENU_HEIGHT && above > below;
     setSlash((prev) => ({
       kind,
       query: m[2],
       from: $from.pos - m[2].length - 1,
-      top: coords.bottom - (box?.top ?? 0) + 4,
+      ...(up
+        ? { bottom: (box?.bottom ?? 0) - coords.top + 4 }
+        : { top: coords.bottom - (box?.top ?? 0) + 4 }),
+      maxHeight: Math.min(MENU_HEIGHT, up ? above : below),
       left: Math.max(0, coords.left - (box?.left ?? 0) - 8),
       index: prev && prev.query === m[2] && prev.kind === kind ? prev.index : 0,
     }));
@@ -201,8 +214,8 @@ export function RichEditor({
       <EditorContent editor={editor} />
       {slash && editor && (
         <div
-          className="absolute z-40 w-72 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg"
-          style={{ top: slash.top, left: slash.left }}
+          className="absolute z-40 flex w-72 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-lg"
+          style={{ top: slash.top, bottom: slash.bottom, left: slash.left, maxHeight: slash.maxHeight }}
           onMouseDown={(e) => e.preventDefault()}
         >
           <p className="px-2 pb-1 pt-0.5 text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
@@ -211,7 +224,7 @@ export function RichEditor({
           </p>
           {slash.kind === "mention" ? (
             matches.length ? (
-              <ul className="max-h-64 overflow-y-auto">
+              <ul className="max-h-64 min-h-0 overflow-y-auto">
                 {(matches as MentionOption[]).map((a, i) => (
                   <li key={a.id}>
                     <button
@@ -232,7 +245,7 @@ export function RichEditor({
               <p className="px-2 py-2 text-xs text-[var(--muted-foreground)]">No teammate matches.</p>
             )
           ) : matches.length ? (
-            <ul className="max-h-64 overflow-y-auto">
+            <ul className="max-h-64 min-h-0 overflow-y-auto">
               {(matches as TemplateOption[]).map((t, i) => (
                 <li key={t.id}>
                   <button
