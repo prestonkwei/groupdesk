@@ -44,9 +44,7 @@ function describe(e: ThreadEvent): string {
         ? `Closed automatically: ${d.email} is marked as spam`
         : `${who} closed this as spam and blocked ${d.email}`;
     case "tag_added":
-      return d.auto === "faculty"
-        ? `Tagged ${d.tagName} automatically: the requester is faculty`
-        : `${who} added ${d.tagName}`;
+      return `${who} added ${d.tagName}`;
     case "tag_removed":
       return `${who} removed ${d.tagName}`;
     case "csat_sent":

@@ -7,8 +7,7 @@ with threading that lands correctly in the requester's inbox.
 ![The ticket list](docs/screenshots/tickets.png)
 
 It was built for a school's tech team, so a few defaults lean that way (reply
-targets count school hours; an optional directory integration tags faculty as
-VIP), but nothing depends on it being a school.
+targets count school hours), but nothing depends on it being a school.
 
 - Tickets from group mail, with forwards and group-rewritten senders resolved
   to the real requester
@@ -215,10 +214,8 @@ Then visit `/admin/gmail` and press **Connect Gmail**, signed in as
   even without In-Reply-To/References.
 - **Profile photos** come from the Google Workspace directory (People API,
   `directory.readonly`), cached in `people` for a week; anyone outside the
-  directory gets initials. Optionally, a people directory set by
-  `ROSTER_API_URL` / `ROSTER_API_KEY` supplies photos and names first, and
-  tickets from people it lists as faculty are tagged VIP. It must answer
-  `GET /api/people?email=` as `src/lib/roster.ts` describes.
+  directory gets initials. A ticket tagged **VIP** shows a crown next to the
+  requester's name.
 - **Templates** live at `/templates`, shared by the whole team. Type `/` in any
   reply to insert one; `{{first_name}}`, `{{ticket_number}}`, `{{agent_name}}`
   and friends are filled in, with `{{first_name|there}}` as a fallback form.

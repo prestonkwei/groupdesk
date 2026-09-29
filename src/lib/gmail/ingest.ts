@@ -17,7 +17,6 @@ import type { GmailClient } from "./client";
 import { AUTO_KIND_HEADER } from "./send";
 import { notifyReply } from "@/lib/notify";
 import { isDigestSubject, stripTicketTag, ticketNumberFromSubject } from "@/lib/ticket-subject";
-import { flagVipIfFaculty } from "@/lib/vip";
 
 export type IngestResult =
   | { status: "skipped"; reason: string }
@@ -385,9 +384,6 @@ export async function ingestParsedEmail(input: {
 
   if (result.status === "ingested") {
     await storeAttachments(result.messageId, parsed);
-    if (result.newTicket && direction === "inbound") {
-      await flagVipIfFaculty(result.ticketId, (forwarded ?? sender).email);
-    }
   }
   return result;
 }

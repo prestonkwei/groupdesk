@@ -40,10 +40,10 @@ export function TagBadge({ name, color }: { name: string; color: string }) {
   );
 }
 
-/** Marks a VIP requester (faculty, tagged automatically) next to their name. */
+/** Marks a VIP requester (the ticket has the VIP tag) next to their name. */
 export function VipMark({ className }: { className?: string }) {
   return (
-    <span title="VIP (faculty)" className={cn("inline-flex shrink-0 text-amber-500", className)}>
+    <span title="VIP" className={cn("inline-flex shrink-0 text-amber-500", className)}>
       <Crown className="size-3.5" aria-hidden />
       <span className="sr-only">VIP</span>
     </span>

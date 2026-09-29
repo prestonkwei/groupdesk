@@ -98,19 +98,6 @@ export const env = {
     return opt("CF_ACCESS_AUD");
   },
 
-  // Roster (optional: photos, names, grad years)
-  get rosterApiUrl() {
-    return opt("ROSTER_API_URL").replace(/\/$/, "");
-  },
-  get rosterApiKey() {
-    return opt("ROSTER_API_KEY");
-  },
-  /** Domains Roster has accounts for; defaults to the mailbox's own domain. */
-  get rosterDomains() {
-    const list = opt("ROSTER_EMAIL_DOMAINS") || (read("GMAIL_MAILBOX")?.split("@")[1] ?? "");
-    return list.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
-  },
-
   // Alerts
   get alertEmailTo() {
     return opt("ALERT_EMAIL_TO");

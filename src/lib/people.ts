@@ -5,22 +5,14 @@ import { db } from "@/db";
 import { people } from "@/db/schema";
 import { env } from "@/lib/env";
 import { googleAuthFor } from "@/lib/gmail/client";
-import { RosterError, rosterDisplayName, rosterPerson } from "@/lib/roster";
 
 /** How long a looked-up photo (or "no photo") is trusted before asking again. */
 const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Lookups per request, so a long ticket list can't burn the People API quota. */
 const MAX_LOOKUPS = 40;
 
-/**
- * Rows cached before photos came from Roster hold Google directory photos; treat
- * them as stale so everyone switches over on their next render.
- */
-const ROSTER_SINCE = new Date("2026-09-28T00:00:00Z").getTime();
-
 /** After a permission error (scope not granted yet, API disabled), back off. */
 let disabledUntil = 0;
-let rosterDisabledUntil = 0;
 
 export type PhotoMap = Record<string, string | null>;
 
@@ -30,8 +22,8 @@ function domainOf(email: string) {
 
 /**
  * Cached profile photos for `emails`. Anything missing or stale is looked up
- * in Roster (falling back to the Google Workspace directory) after the response
- * is sent, so pages never wait on either; the photo shows from the next render on.
+ * in the Google Workspace directory after the response is sent, so pages never
+ * wait on it; the photo shows from the next render on.
  */
 export async function photosFor(emails: (string | null | undefined)[]): Promise<PhotoMap> {
   const wanted = [
@@ -49,11 +41,11 @@ export async function photosFor(emails: (string | null | undefined)[]): Promise<
   for (const r of rows) {
     map[r.email] = r.photoUrl;
     const fetched = r.fetchedAt.getTime();
-    if (fetched >= ROSTER_SINCE && Date.now() - fetched < STALE_MS) fresh.add(r.email);
+    if (Date.now() - fetched < STALE_MS) fresh.add(r.email);
   }
 
   const todo = wanted.filter((e) => !fresh.has(e)).slice(0, MAX_LOOKUPS);
-  if (todo.length && (Date.now() > disabledUntil || Date.now() > rosterDisabledUntil)) {
+  if (todo.length && Date.now() > disabledUntil) {
     after(() => lookUp(todo).catch((err) => console.error("photo lookup failed", err)));
   }
   return map;
@@ -70,35 +62,9 @@ async function lookUp(emails: string[]) {
 
 /** Look one person up and cache them. False when it should be retried later. */
 async function lookUpOne(email: string): Promise<boolean> {
-  let name: string | null = null;
-  let photoUrl: string | null = null;
-
-  if (Date.now() <= rosterDisabledUntil) return false;
-  try {
-    const person = await rosterPerson(email);
-    if (person) {
-      name = rosterDisplayName(person);
-      photoUrl = person.imageUrl;
-    }
-  } catch (err) {
-    if (err instanceof RosterError && (err.status === 401 || err.status === 503)) {
-      rosterDisabledUntil = Date.now() + 10 * 60 * 1000;
-      console.warn(
-        "Roster refused the people lookup. Check ROSTER_API_KEY here matches PEOPLE_API_KEY in Roster.",
-      );
-    } else {
-      console.error("Roster people lookup failed", err);
-    }
-    // Don't cache a miss we only got because Roster was unreachable.
-    return false;
-  }
-
-  if (!photoUrl) {
-    const google = await googlePhoto(email);
-    if (google === undefined) return false;
-    name ??= google.name;
-    photoUrl = google.photoUrl;
-  }
+  const found = await googlePhoto(email);
+  if (found === undefined) return false;
+  const { name, photoUrl } = found;
 
   await db
     .insert(people)
@@ -121,17 +87,14 @@ export type RecacheResult = {
   refreshed: number;
   failed: number;
   remaining: number;
-  /** Roster answered 401/503: the key is wrong or missing on one side. */
-  rosterRefused: boolean;
 };
 
 /**
  * Re-pull everyone the portal knows about (agents, requesters, senders and
- * recipients, and anyone already cached) from Roster, for /admin/people.
+ * recipients, and anyone already cached) from the directory, for /admin/people.
  */
 export async function recacheEveryone(): Promise<RecacheResult> {
-  // An admin pressing the button has usually just fixed the key; try again now.
-  rosterDisabledUntil = 0;
+  // An admin pressing the button has usually just fixed access; try again now.
   disabledUntil = 0;
 
   const result = await db.execute<{ email: string }>(sql`
@@ -156,7 +119,7 @@ export async function recacheEveryone(): Promise<RecacheResult> {
   let failed = 0;
 
   const worker = async () => {
-    while (next < emails.length && Date.now() < deadline && rosterDisabledUntil <= Date.now()) {
+    while (next < emails.length && Date.now() < deadline) {
       const email = emails[next++];
       try {
         if (await lookUpOne(email)) refreshed++;
@@ -174,7 +137,6 @@ export async function recacheEveryone(): Promise<RecacheResult> {
     refreshed,
     failed,
     remaining: emails.length - next,
-    rosterRefused: rosterDisabledUntil > Date.now(),
   };
 }
 
@@ -190,13 +152,13 @@ export async function peopleStats() {
 }
 
 /**
- * The Workspace directory photo, for people Roster has no photo for. Resolves
- * undefined when the lookup should be retried later rather than cached.
+ * A person's Workspace directory name and photo. Resolves undefined when the
+ * lookup should be retried later rather than cached.
  */
 async function googlePhoto(
   email: string,
 ): Promise<{ name: string | null; photoUrl: string | null } | undefined> {
-  // Only the school's own directory has photos; everyone else gets initials.
+  // Only the mailbox's own domain is in the directory; everyone else gets initials.
   if (domainOf(email) !== domainOf(env.gmailMailbox)) return { name: null, photoUrl: null };
   if (Date.now() <= disabledUntil) return { name: null, photoUrl: null };
 

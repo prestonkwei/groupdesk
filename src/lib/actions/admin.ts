@@ -167,11 +167,6 @@ export async function recachePeople(): Promise<ActionState> {
     const r = await recacheEveryone();
     revalidatePath("/admin/people");
     revalidatePath("/tickets");
-    if (r.rosterRefused) {
-      return {
-        error: `Roster rejected the API key after ${r.refreshed} lookups. ROSTER_API_KEY here must match PEOPLE_API_KEY in Roster.`,
-      };
-    }
     const parts = [`Refreshed ${r.refreshed} of ${r.total}`];
     if (r.failed) parts.push(`${r.failed} failed`);
     if (r.remaining) parts.push(`${r.remaining} left, press again to continue`);
