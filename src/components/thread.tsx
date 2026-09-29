@@ -173,7 +173,7 @@ export function Thread({
   );
 }
 
-/** "to Jamie, cc helpdesk ▾" under an open email; expands to the full header. */
+/** "to Jamie, cc help ▾" under an open email; expands to the full header. */
 function Recipients({ message: m }: { message: ThreadMessage }) {
   const [open, setOpen] = useState(false);
   const bcc = m.bccEmails ?? [];

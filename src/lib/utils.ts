@@ -14,13 +14,16 @@ export function slugify(s: string) {
     .slice(0, 60);
 }
 
+/** The portal's name: page titles, the sidebar, and automated mail. */
+export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "Tickets";
+
+/** How the team signs emails to requesters. */
+export const TEAM_NAME = process.env.NEXT_PUBLIC_TEAM_NAME || "Support Team";
+
 /**
  * Dates render the same on the server (UTC on Vercel) and in the browser, in
  * the school's time zone, so a late-evening email never shows as the next day.
  */
-/** How the team signs emails to requesters. */
-export const TEAM_NAME = "Support Team";
-
 export const TIME_ZONE = process.env.NEXT_PUBLIC_TIME_ZONE || "America/Los_Angeles";
 
 /** "Jul 24, 2025": always with the year, since old mail spans years. */

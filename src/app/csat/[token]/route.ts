@@ -1,4 +1,5 @@
 import { recordCsat, surveyByToken, type CsatRating } from "@/lib/csat";
+import { TEAM_NAME } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ function page(body: string, status = 200) {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Support Team feedback</title>
+<title>${esc(TEAM_NAME)} feedback</title>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#f6f7f9;font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:#1f2328}
@@ -47,7 +48,7 @@ function page(body: string, status = 200) {
   button{margin-top:12px;height:40px;padding:0 18px;border:0;border-radius:10px;background:#111827;color:#fff;font:inherit;font-size:15px;cursor:pointer}
   .ok{margin:0 0 16px;padding:10px 12px;border-radius:10px;background:#ecfdf5;color:#065f46;font-size:14px}
 </style></head><body><main><div class="card">${body}</div>
-<p class="muted" style="text-align:center;margin-top:16px">Support Team</p></main></body></html>`;
+<p class="muted" style="text-align:center;margin-top:16px">${esc(TEAM_NAME)}</p></main></body></html>`;
   return new Response(html, {
     status,
     headers: {
@@ -59,7 +60,7 @@ function page(body: string, status = 200) {
   });
 }
 
-const NOT_FOUND = `<h1>Link not found</h1><p>This feedback link has expired or isn't valid. If you still need help, just reply to the email from the Support Team.</p>`;
+const NOT_FOUND = `<h1>Link not found</h1><p>This feedback link has expired or isn't valid. If you still need help, just reply to the email from the ${esc(TEAM_NAME)}.</p>`;
 
 function form(opts: {
   token: string;
@@ -77,7 +78,7 @@ function form(opts: {
   return `
 <h1>Thanks for your feedback!</h1>
 <p>About ticket #${opts.number}: ${esc(opts.subject)}</p>
-${opts.sent ? `<div class="ok">Got it, thank you. Your comment went to the Support Team.</div>` : ""}
+${opts.sent ? `<div class="ok">Got it, thank you. Your comment went to the ${esc(TEAM_NAME)}.</div>` : ""}
 <form method="post" action="${action}">
   <div class="choices">${radio("good", "👍", "Good")}${radio("bad", "👎", "Not good")}</div>
   <label for="comment" class="muted" style="display:block;margin-bottom:6px">Leave a comment if you'd like (optional)</label>

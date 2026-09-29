@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { RichEditor, type RichValue, type TemplateOption } from "@/components/rich-editor";
 import { firstNameOf, recipientVars } from "@/lib/template-vars";
 import { RecipientField, type Contact } from "@/components/recipient-field";
+import { TICKET_TAG } from "@/lib/ticket-subject";
 
 /**
  * Compose an email that starts a new ticket. The ticket number isn't known
@@ -90,7 +91,7 @@ export function NewMessageForm({
         )}
         <div className="flex min-h-10 items-center gap-2 border-b border-[var(--border)] px-3 text-sm">
           <span className="w-8 shrink-0 text-xs text-[var(--muted-foreground)]">Subj</span>
-          <span className="shrink-0 font-mono text-xs text-[var(--muted-foreground)]">[TICKET: #…]</span>
+          <span className="shrink-0 font-mono text-xs text-[var(--muted-foreground)]">[{TICKET_TAG}: #…]</span>
           <input
             value={subject}
             onChange={(e) => setSubject(e.target.value)}

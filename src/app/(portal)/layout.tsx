@@ -9,6 +9,7 @@ import { MobileNav } from "@/components/mobile-nav";
 import { photosFor } from "@/lib/people";
 import { UserMenu } from "@/components/user-menu";
 import { env } from "@/lib/env";
+import { APP_NAME } from "@/lib/utils";
 import { GlobalShortcuts } from "@/components/shortcuts";
 
 export default async function PortalLayout({
@@ -43,7 +44,7 @@ export default async function PortalLayout({
           <MobileNav {...sidebar} />
         </Suspense>
         <Link href="/tickets" className="text-sm font-semibold tracking-tight">
-          Tickets
+          {APP_NAME}
         </Link>
         <div className="ml-auto flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
           <GlobalShortcuts />

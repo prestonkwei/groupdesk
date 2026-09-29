@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { messages, tickets, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
 import { taggedSubject } from "@/lib/ticket-subject";
-import { TEAM_NAME, TIME_ZONE } from "@/lib/utils";
+import { APP_NAME, TEAM_NAME, TIME_ZONE } from "@/lib/utils";
 import { gmailFor } from "./client";
 
 export type SentReply = {
@@ -291,7 +291,7 @@ export async function sendNotice(args: {
 }) {
   const { client } = await gmailFor();
   const msg = createMimeMessage();
-  msg.setSender({ name: args.fromName ?? "Tickets", addr: env.groupEmail });
+  msg.setSender({ name: args.fromName ?? APP_NAME, addr: env.groupEmail });
   msg.setTo(args.to);
   msg.setSubject(args.subject);
   msg.setHeader("Auto-Submitted", "auto-generated");

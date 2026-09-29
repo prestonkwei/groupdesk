@@ -1,12 +1,20 @@
+import { APP_NAME } from "@/lib/utils";
+
+/**
+ * The word in every reply's subject tag, e.g. "TICKET" in "[TICKET: #1058]".
+ * Changing it on a live deployment stops old tags from matching.
+ */
+export const TICKET_TAG = process.env.NEXT_PUBLIC_TICKET_TAG || "TICKET";
+
 /**
  * Every reply carries the ticket number in its subject, e.g.
  * "[TICKET: #1058] Copies of CC notes from this week". Incoming mail with the
  * tag lands on that ticket even when the threading headers are missing.
  */
-const TAG_RE = /\[TICKET:\s*#(\d+)\]\s*/i;
+const TAG_RE = new RegExp(`\\[${TICKET_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\s*#(\\d+)\\]\\s*`, "i");
 
 export function taggedSubject(number: number, subject: string) {
-  return `[TICKET: #${number}] ${stripTicketTag(subject)}`;
+  return `[${TICKET_TAG}: #${number}] ${stripTicketTag(subject)}`;
 }
 
 export function ticketNumberFromSubject(subject: string | null | undefined): number | null {
@@ -19,8 +27,8 @@ export function stripTicketTag(subject: string) {
 }
 
 /** Subject markers for our own automated mail; ingest ignores replies to it. */
-export const DIGEST_TAG = "[helpdesk digest]";
-export const NOTICE_TAG = "[helpdesk notice]";
+export const DIGEST_TAG = `[${APP_NAME} digest]`;
+export const NOTICE_TAG = `[${APP_NAME} notice]`;
 
 export function isDigestSubject(subject: string | null | undefined) {
   const s = subject?.toLowerCase() ?? "";

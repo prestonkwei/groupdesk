@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
+import { APP_NAME } from "@/lib/utils";
 
 /**
  * Below the md breakpoint the sidebar becomes a slide-out drawer behind a
@@ -32,7 +33,7 @@ export function MobileNav(props: React.ComponentProps<typeof Sidebar>) {
             }}
           >
             <div className="flex h-12 shrink-0 items-center border-b border-[var(--border)] px-4">
-              <span className="text-sm font-semibold">Tickets</span>
+              <span className="text-sm font-semibold">{APP_NAME}</span>
               <button
                 type="button"
                 onClick={() => setOpen(false)}

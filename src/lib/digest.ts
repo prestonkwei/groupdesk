@@ -6,7 +6,7 @@ import { env } from "@/lib/env";
 import { sendNotice } from "@/lib/gmail/send";
 import { DIGEST_TAG } from "@/lib/ticket-subject";
 import { firstNameOf } from "@/lib/template-vars";
-import { TIME_ZONE, shortDate } from "@/lib/utils";
+import { APP_NAME, TIME_ZONE, shortDate } from "@/lib/utils";
 
 const DAY = 86_400_000;
 const LIST_LIMIT = 10;
@@ -114,7 +114,7 @@ function render(agent: Agent, data: Awaited<ReturnType<typeof digestFor>>) {
   const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111827">
   <div style="max-width:600px;margin:0 auto">
     <p style="font-size:16px;margin:0 0 4px">Hi ${esc(first)},</p>
-    <p style="font-size:14px;color:#4b5563;margin:0 0 20px">Here's where your helpdesk tickets stand this Friday.</p>
+    <p style="font-size:14px;color:#4b5563;margin:0 0 20px">Here's where your tickets stand this Friday.</p>
     <table role="presentation" cellspacing="8" cellpadding="0" style="width:100%;margin:0 -8px 12px"><tr>
       ${stat("Assigned &amp; unsolved", data.mine.length, `${base}/tickets?view=mine`)}
       ${stat("Open", open)}
@@ -139,7 +139,7 @@ function render(agent: Agent, data: Awaited<ReturnType<typeof digestFor>>) {
     <p style="font-size:13px;color:#4b5563;margin:24px 0 0">
       Team-wide, <a href="${base}/tickets?view=unassigned" style="color:#1d4ed8">${data.unassigned} unsolved ticket${data.unassigned === 1 ? " has" : "s have"} no one assigned</a>.
     </p>
-    <p style="font-size:12px;color:#9ca3af;margin:24px 0 0">Weekly digest from Tickets, every Friday at 4pm. Replies to this email aren't read.</p>
+    <p style="font-size:12px;color:#9ca3af;margin:24px 0 0">Weekly digest from ${esc(APP_NAME)}, every Friday at 4pm. Replies to this email aren't read.</p>
   </div></body></html>`;
 
   const text = [

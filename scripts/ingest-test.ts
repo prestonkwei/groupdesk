@@ -10,17 +10,23 @@ process.env.TOKEN_ENC_KEY ??= randomBytes(32).toString("base64");
 
 import PostalMime from "postal-mime";
 import { __test } from "../src/lib/gmail/ingest";
-import { isDigestSubject, taggedSubject, ticketNumberFromSubject } from "../src/lib/ticket-subject";
+import {
+  DIGEST_TAG,
+  TICKET_TAG,
+  isDigestSubject,
+  taggedSubject,
+  ticketNumberFromSubject,
+} from "../src/lib/ticket-subject";
 import { decryptSecret, encryptSecret } from "../src/lib/crypto";
 
 /** A group-rewritten reply: From says the list, the person is in X-Original-From. */
 const REWRITTEN = `Delivered-To: agent@example.org
-From: "helpdesk" <help@example.org>
+From: "Help" <help@example.org>
 X-Original-From: Jamie Rivera <jrivera@example.org>
 Reply-To: jrivera@example.org
 To: help@example.org
 Cc: Dana Lee <dlee@example.org>
-Subject: Re: Re: [helpdesk] Projector in room 204 won't turn on
+Subject: Re: Re: [Help] Projector in room 204 won't turn on
 Message-ID: <CAH1abc123@mail.gmail.com>
 In-Reply-To: <CAH0zzz000@mail.gmail.com>
 References: <CAH0aaa111@mail.gmail.com> <CAH0zzz000@mail.gmail.com>
@@ -63,7 +69,7 @@ async function main() {
     [
       "repeated Re: stripped for the ticket subject",
       __test.stripReplyPrefix(rewritten.subject ?? ""),
-      "[helpdesk] Projector in room 204 won't turn on",
+      "[Help] Projector in room 204 won't turn on",
     ],
     ["Cc parsed", (rewritten.cc ?? []).length, 1],
     [
@@ -74,13 +80,13 @@ async function main() {
     ["direct mail uses From", __test.realSender(direct).email, "sokafor@example.org"],
     [
       "ticket tag stripped from a reply's subject",
-      __test.stripReplyPrefix("Re: RE: [TICKET: #1058] Copies of CC notes"),
+      __test.stripReplyPrefix(`Re: RE: [${TICKET_TAG}: #1058] Copies of CC notes`),
       "Copies of CC notes",
     ],
-    ["ticket number read from subject", ticketNumberFromSubject("Re: [TICKET: #1058] Copies"), 1058],
+    ["ticket number read from subject", ticketNumberFromSubject(`Re: [${TICKET_TAG}: #1058] Copies`), 1058],
     ["no tag, no number", ticketNumberFromSubject("Copies of CC notes"), null],
-    ["reply subject is tagged once", taggedSubject(1058, "[TICKET: #1058] Copies"), "[TICKET: #1058] Copies"],
-    ["replies to the digest are recognised", isDigestSubject("Re: [helpdesk digest] 4 open, 2 pending"), true],
+    ["reply subject is tagged once", taggedSubject(1058, `[${TICKET_TAG}: #1058] Copies`), `[${TICKET_TAG}: #1058] Copies`],
+    ["replies to the digest are recognised", isDigestSubject(`Re: ${DIGEST_TAG} 4 open, 2 pending`), true],
     ["ordinary subjects are not digests", isDigestSubject("Digest of CC notes"), false],
     [
       "Gmail forward: requester is the original sender",

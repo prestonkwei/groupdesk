@@ -5,6 +5,7 @@ import { agents, ticketAssignees, type Agent } from "@/db/schema";
 import { env } from "@/lib/env";
 import { sendNotice } from "@/lib/gmail/send";
 import { NOTICE_TAG } from "@/lib/ticket-subject";
+import { APP_NAME } from "@/lib/utils";
 
 /**
  * Agent notifications by email: assigned to you, a requester replied on your
@@ -40,7 +41,7 @@ async function send(to: Agent, subject: string, lead: string, tickets: TicketRef
       <p style="margin:0 0 12px">${lead}</p>
       <ul style="margin:0 0 12px;padding-left:18px">${links}</ul>
       ${quote ? `<blockquote style="margin:0 0 12px;padding:8px 12px;border-left:3px solid #e5e7eb;color:#4b5563">${esc(quote)}</blockquote>` : ""}
-      <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">Tickets notification. Turn these off from your avatar menu in the portal. Replies to this email aren't read.</p>
+      <p style="margin:24px 0 0;font-size:12px;color:#9ca3af">${esc(APP_NAME)} notification. Turn these off from your avatar menu in the portal. Replies to this email aren't read.</p>
     </div></body></html>`;
   const text = [
     lead.replace(/<[^>]+>/g, ""),

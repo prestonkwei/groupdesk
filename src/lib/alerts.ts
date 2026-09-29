@@ -1,5 +1,6 @@
 import "server-only";
 import { env } from "./env";
+import { APP_NAME } from "./utils";
 
 /**
  * Best-effort operational alert. Never throws — an alert failing must not turn
@@ -26,9 +27,9 @@ export async function alert(subject: string, detail: string) {
       const { createMimeMessage } = await import("mimetext");
       const { client, email } = await gmailFor();
       const msg = createMimeMessage();
-      msg.setSender({ name: "Tickets", addr: email });
+      msg.setSender({ name: APP_NAME, addr: email });
       msg.setRecipient(env.alertEmailTo);
-      msg.setSubject(`[Tickets] ${subject}`);
+      msg.setSubject(`[${APP_NAME}] ${subject}`);
       msg.addMessage({ contentType: "text/plain", data: detail });
       await client.users.messages.send({
         userId: "me",

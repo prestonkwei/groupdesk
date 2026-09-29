@@ -2,8 +2,8 @@ name: Gmail catch-up sync
 
 # Belt and braces for dropped Pub/Sub pushes. The portal also catches up on
 # its own whenever someone has it open; this covers nights and weekends.
-# Needs the repository secret CRON_SECRET (same value as in Vercel). Without
-# it the job just skips.
+# Needs the repository variable APP_URL and the secret CRON_SECRET (same value
+# as in Vercel). Without them the job doesn't run.
 
 on:
   schedule:
@@ -16,13 +16,14 @@ concurrency:
 
 jobs:
   reconcile:
+    if: vars.APP_URL != ''
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
       - name: Call the reconcile endpoint
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_URL: ${{ vars.APP_URL || 'https://tickets.example.org' }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
           if [ -z "$CRON_SECRET" ]; then
             echo "::notice::CRON_SECRET repository secret not set; skipping."

@@ -10,15 +10,13 @@ export type RosterPerson = {
   imageUrl: string | null;
 };
 
-/** Roster only knows school accounts; anything else would be a wasted 400. */
-const SCHOOL_DOMAINS = ["example.org", "example.net"];
-
+/** Roster only knows school accounts (ROSTER_EMAIL_DOMAINS); anything else would be a wasted 400. */
 export function isSchoolEmail(email: string) {
-  return SCHOOL_DOMAINS.includes(email.split("@")[1]?.toLowerCase() ?? "");
+  return env.rosterDomains.includes(email.split("@")[1]?.toLowerCase() ?? "");
 }
 
 export function rosterConfigured() {
-  return !!env.rosterApiKey;
+  return !!env.rosterApiUrl && !!env.rosterApiKey;
 }
 
 /**
@@ -41,14 +39,14 @@ export async function rosterPerson(email: string): Promise<RosterPerson | null> 
   return (await res.json()) as RosterPerson;
 }
 
-/** "www.roster.example.org" and "roster.example.org" are the same site. */
+/** "www.example.org" and "example.org" are the same site. */
 function sameSite(a: string, b: string) {
   return a.replace(/^www\./, "") === b.replace(/^www\./, "");
 }
 
 /**
  * fetch drops the Authorization header when it follows a redirect to another
- * host, and roster.example.org redirects to www.roster.example.org. So redirects are
+ * host, and Roster may redirect its bare domain to www. So redirects are
  * followed here, re-sending the key only within the same site.
  */
 async function get(url: URL, hops = 0): Promise<Response> {

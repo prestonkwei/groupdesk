@@ -72,11 +72,11 @@ export const env = {
 
   // Gmail
   get labelName() {
-    return opt("GMAIL_LABEL_NAME", "helpdesk");
+    return req("GMAIL_LABEL_NAME");
   },
   /** The one mailbox the app ingests from; only this person may manage it. */
   get gmailMailbox() {
-    return opt("GMAIL_MAILBOX", "admin@example.org").toLowerCase();
+    return req("GMAIL_MAILBOX").toLowerCase();
   },
   get groupEmail() {
     return req("GROUP_EMAIL");
@@ -98,12 +98,17 @@ export const env = {
     return opt("CF_ACCESS_AUD");
   },
 
-  // Roster (photos, names, grad years)
+  // Roster (optional: photos, names, grad years)
   get rosterApiUrl() {
-    return opt("ROSTER_API_URL", "https://www.roster.example.org").replace(/\/$/, "");
+    return opt("ROSTER_API_URL").replace(/\/$/, "");
   },
   get rosterApiKey() {
     return opt("ROSTER_API_KEY");
+  },
+  /** Domains Roster has accounts for; defaults to the mailbox's own domain. */
+  get rosterDomains() {
+    const list = opt("ROSTER_EMAIL_DOMAINS") || (read("GMAIL_MAILBOX")?.split("@")[1] ?? "");
+    return list.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean);
   },
 
   // Alerts
