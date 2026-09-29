@@ -1,4 +1,4 @@
-# Tickets
+# Groupdesk
 
 A shared inbox for mail sent to a Google Group. Gmail pushes changes to
 Pub/Sub, this app turns them into tickets, and agents reply from the portal
