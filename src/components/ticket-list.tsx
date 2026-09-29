@@ -408,7 +408,7 @@ export function TicketList({
                   title={assigned.length ? `Assigned to ${assigned.map((a) => a.name).join(", ")}` : "Unassigned"}
                 >
                   {assigned.length ? (
-                    <span className="flex -space-x-1.5">
+                    <span className="flex -space-x-1">
                       {assigned.slice(0, 3).map((a) => (
                         <Avatar
                           key={a.id}

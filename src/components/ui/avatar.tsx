@@ -64,6 +64,8 @@ export function Avatar({
       className={cn(
         "grid shrink-0 place-items-center rounded-full font-semibold",
         SIZES[size],
+        // After the size: its text-* would otherwise win the line-height.
+        "leading-none",
         tint(email.toLowerCase()),
         className,
       )}

@@ -192,7 +192,7 @@ function Recipients({ message: m }: { message: ThreadMessage }) {
     ["Subject", m.subject ?? ""],
   ];
   return (
-    <div className="-mt-1 mb-3">
+    <div className="mt-0.5">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -234,6 +234,35 @@ function MessageCard({
   const isOutbound = m.direction === "outbound";
   const name = m.fromName || m.fromEmail;
 
+  const nameRow = (
+    <>
+      <span className="truncate text-sm font-semibold">{name}</span>
+      {open && m.fromName && (
+        <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:inline">
+          {m.fromEmail}
+        </span>
+      )}
+      {isNote && (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-200/70 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
+          <Lock className="size-2.5" />
+          Internal
+        </span>
+      )}
+      {isOutbound && (
+        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+          Sent from portal
+        </span>
+      )}
+      <time
+        className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]"
+        title={dateTime(m.sentAt)}
+        dateTime={new Date(m.sentAt).toISOString()}
+      >
+        {open ? dateTime(m.sentAt) : relativeTime(m.sentAt)}
+      </time>
+    </>
+  );
+
   return (
     <article
       className={cn(
@@ -244,52 +273,45 @@ function MessageCard({
         !open && "hover:bg-[var(--muted)]",
       )}
     >
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className="flex w-full items-start gap-3 px-3 py-3 text-left sm:px-4"
-      >
-        <Avatar name={m.fromName} email={m.fromEmail} photo={photo} size="md" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate text-sm font-semibold">{name}</span>
-            {open && m.fromName && (
-              <span className="hidden truncate text-xs text-[var(--muted-foreground)] sm:inline">
-                {m.fromEmail}
-              </span>
-            )}
-            {isNote && (
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-200/70 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-amber-900 dark:bg-amber-900 dark:text-amber-100">
-                <Lock className="size-2.5" />
-                Internal
-              </span>
-            )}
-            {isOutbound && (
-              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                Sent from portal
-              </span>
-            )}
-            <time
-              className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]"
-              title={dateTime(m.sentAt)}
-              dateTime={new Date(m.sentAt).toISOString()}
+      {open ? (
+        // Open: the name row toggles, and "to …" sits right under it, beside the
+        // avatar. It has its own button, so it can't live inside the toggle.
+        <div className={cn("flex gap-3 px-3 pt-3 sm:px-4", isNote ? "items-center" : "items-start")}>
+          <button type="button" onClick={onToggle} tabIndex={-1} aria-hidden className="shrink-0">
+            <Avatar name={m.fromName} email={m.fromEmail} photo={photo} size="md" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-expanded
+              className="flex w-full items-baseline gap-2 text-left"
             >
-              {open ? dateTime(m.sentAt) : relativeTime(m.sentAt)}
-            </time>
+              {nameRow}
+            </button>
+            {!isNote && <Recipients message={m} />}
           </div>
-          {!open && (
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={false}
+          className="flex w-full items-start gap-3 px-3 py-3 text-left sm:px-4"
+        >
+          <Avatar name={m.fromName} email={m.fromEmail} photo={photo} size="md" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">{nameRow}</div>
             <p className="mt-0.5 truncate text-sm text-[var(--muted-foreground)]">
               {m.attachments.length > 0 && <Paperclip className="mr-1 inline size-3" />}
               {snippet(m) || "(empty message)"}
             </p>
-          )}
-        </div>
-      </button>
+          </div>
+        </button>
+      )}
 
       {open && (
-        <div className="px-3 pb-4 sm:px-4 sm:pl-[60px]">
-          {!isNote && <Recipients message={m} />}
+        <div className="px-3 pt-3 pb-4 sm:px-4 sm:pl-[60px]">
           {m.bodyHtml ? (
             <HtmlBody html={m.bodyHtml} />
           ) : (

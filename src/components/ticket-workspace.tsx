@@ -482,7 +482,7 @@ export function MobileDetails({ children }: { children?: React.ReactNode }) {
         </span>
         <PriorityIcon priority={state.priority} />
         {assignees.length > 0 ? (
-          <span className="flex -space-x-1.5">
+          <span className="flex -space-x-0.5">
             {assignees.slice(0, 3).map((a) => (
               <Avatar
                 key={a.id}
@@ -525,6 +525,11 @@ export function PresenceBar() {
     ? `${someoneReplying.name.split(" ")[0]} is replying…`
     : `${names.slice(0, 2).join(" & ")}${names.length > 2 ? ` +${names.length - 2}` : ""} viewing`;
 
+  // Rings match the pill, not the page, so each avatar reads as cut out of it.
+  const ring = someoneReplying
+    ? "ring-amber-100 dark:ring-amber-950"
+    : "ring-[var(--muted)]";
+
   return (
     <span
       className={cn(
@@ -535,7 +540,7 @@ export function PresenceBar() {
       )}
       title={viewers.map((v) => `${v.name} (${v.replying ? "replying" : "viewing"})`).join(", ")}
     >
-      <span className="flex -space-x-1.5">
+      <span className="flex -space-x-0.5">
         {viewers.slice(0, 3).map((v) => (
           <span key={v.email} className="relative">
             <Avatar
@@ -543,11 +548,12 @@ export function PresenceBar() {
               email={v.email}
               photo={photoFor(v.email)}
               size="xs"
-              className="ring-2 ring-[var(--background)]"
+              className={cn("ring-2", ring)}
             />
             <span
               className={cn(
-                "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2 ring-[var(--background)]",
+                "absolute -bottom-0.5 -right-0.5 size-2 rounded-full ring-2",
+                ring,
                 v.replying ? "bg-amber-500" : "bg-emerald-500",
               )}
             />
