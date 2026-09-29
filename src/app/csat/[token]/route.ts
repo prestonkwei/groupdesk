@@ -6,8 +6,7 @@ export const dynamic = "force-dynamic";
 
 /*
  * The requester-facing survey page. Requesters aren't agents, so this sits
- * outside Cloudflare Access (Bypass on /csat/*) and the token is the only
- * credential. It's one self-contained HTML page with inline styles, so it
+ * outside sign-in (see proxy.ts) and the token is the only credential. It's one self-contained HTML page with inline styles, so it
  * needs nothing else from the app.
  *
  * Opening a link doesn't record anything by itself: mail scanners fetch every

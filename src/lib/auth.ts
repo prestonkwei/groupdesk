@@ -1,26 +1,17 @@
 import "server-only";
 import { cache } from "react";
-import { headers, cookies } from "next/headers";
+import { cookies } from "next/headers";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { agents, agentTeams, type Agent } from "@/db/schema";
 import { env } from "./env";
-import { ACCESS_COOKIE, ACCESS_HEADER, verifyAccessToken } from "./access-jwt";
+import { SESSION_COOKIE, readSessionToken } from "./session";
 
 export type Session = { agent: Agent; teamIds: string[] };
 
 async function identityEmail(): Promise<string | null> {
-  const h = await headers();
-  const token =
-    h.get(ACCESS_HEADER) ?? (await cookies()).get(ACCESS_COOKIE)?.value ?? null;
-
-  if (token && env.cfTeamDomain && env.cfAud) {
-    const identity = await verifyAccessToken(token, {
-      teamDomain: env.cfTeamDomain,
-      aud: env.cfAud,
-    });
-    if (identity) return identity.email;
-  }
+  const email = await readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  if (email) return email;
   return env.devBypassEmail ? env.devBypassEmail.toLowerCase() : null;
 }
 
@@ -49,7 +40,7 @@ export async function requireAgent(): Promise<Session> {
   const session = await getSession();
   if (!session) {
     throw new Error(
-      "Not authorized. Your email passed Cloudflare Access but is not an active agent in this portal.",
+      "Not authorized. You're signed in, but not as an active agent in this portal.",
     );
   }
   return session;

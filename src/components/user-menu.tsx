@@ -8,8 +8,8 @@ import { setNotifyEmail } from "@/lib/actions/views";
 import { cn } from "@/lib/utils";
 
 /**
- * Avatar menu. Logging out ends the Cloudflare Access session via Access's
- * own logout URL on this domain; Cloudflare serves it, not the app.
+ * Avatar menu. Logging out ends this app's session and, where the identity
+ * provider supports it, the provider's own session.
  */
 export function UserMenu({
   name,
@@ -22,7 +22,7 @@ export function UserMenu({
   name: string;
   email: string;
   photo: string | null;
-  /** Null when Access isn't in front of the app (local dev). */
+  /** Null when sign-in isn't configured (local dev). */
   logoutUrl: string | null;
 }) {
   const [notify, setNotify] = useOptimistic(notifyEmail);
@@ -88,7 +88,7 @@ export function UserMenu({
           </button>
           <div className="my-1 h-px bg-[var(--border)]" />
           {logoutUrl ? (
-            // A full page load, not a client navigation: Cloudflare handles it.
+            // A full page load, not a client navigation: it may leave for the provider.
             <a
               href={logoutUrl}
               className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--accent)]"
@@ -98,7 +98,7 @@ export function UserMenu({
             </a>
           ) : (
             <p className="px-2 py-1.5 text-xs text-[var(--muted-foreground)]">
-              Signed in via DEV_BYPASS_EMAIL — no Access session to end.
+              Signed in via DEV_BYPASS_EMAIL — no session to end.
             </p>
           )}
         </Popover.Content>

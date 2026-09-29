@@ -30,15 +30,15 @@ export default async function AgentsPage() {
     <div className="max-w-4xl p-6">
       <h1 className="mb-1 text-base font-semibold">Agents</h1>
       <p className="mb-5 text-xs text-[var(--muted-foreground)]">
-        Adding someone here lets them use the portal. They also need to be in the
-        Cloudflare Access policy for the portal domain — that is a separate list.
+        Adding someone here lets them use the portal. They sign in with your identity
+        provider, so they need an account there too.
       </p>
 
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Add an agent</CardTitle>
           <CardDescription>
-            The email must match the one they sign in to Cloudflare Access with.
+            The email must match the one their identity provider account uses.
           </CardDescription>
         </CardHeader>
         <CardContent>

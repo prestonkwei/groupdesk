@@ -1,8 +1,8 @@
 import { env } from "./env";
 
 /**
- * Cron routes are reachable without Cloudflare Access (they have a Bypass
- * policy), so they carry their own shared secret. Vercel Cron sends
+ * Cron routes are reachable without signing in (see proxy.ts), so they carry
+ * their own shared secret. Vercel Cron sends
  * `Authorization: Bearer $CRON_SECRET`; external schedulers can use either
  * that or `?secret=`.
  */

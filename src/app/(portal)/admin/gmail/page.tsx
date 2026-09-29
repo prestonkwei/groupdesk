@@ -189,7 +189,7 @@ export default async function GmailAdminPage({
             gives the guarantee that a dropped push costs minutes, not a lost ticket.
           </p>
           <p>
-            Both authenticate with <code>CRON_SECRET</code>, not Cloudflare Access.
+            Both authenticate with <code>CRON_SECRET</code>, not agent sign-in.
           </p>
         </CardContent>
       </Card>

@@ -51,11 +51,7 @@ export async function setAgentActive(
   const active = String(form.get("active")) === "true";
   await db.update(agents).set({ active }).where(eq(agents.id, id));
   revalidatePath("/admin/agents");
-  return {
-    ok: active
-      ? "Reactivated"
-      : "Deactivated — remember to remove them from the Cloudflare Access policy too",
-  };
+  return { ok: active ? "Reactivated" : "Deactivated" };
 }
 
 export async function setAgentTeam(

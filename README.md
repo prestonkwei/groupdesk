@@ -26,7 +26,7 @@ targets count school hours), but nothing depends on it being a school.
 | Database | Neon Postgres via Drizzle (`drizzle-orm/neon-serverless`, pooled URL) |
 | Styling | Tailwind v4, shadcn-style components in `src/components/ui` |
 | Attachments | Vercel Blob |
-| Login | Cloudflare Access, JWT verified with `jose` in `src/proxy.ts` |
+| Login | Any OpenID Connect provider (`src/lib/oidc.ts`); session checked in `src/proxy.ts` |
 | Mail | `@googleapis/gmail`, `postal-mime` to parse, `mimetext` to compose |
 
 ## Using it
@@ -53,8 +53,8 @@ senders as spam. **Admins** also manage agents, teams and tags, unblock
 senders, refresh directory photos, and see reports. Only the admin whose
 address is `GMAIL_MAILBOX` can connect or reconnect Gmail.
 
-Add people at **Admin → Agents**. They also have to be allowed through
-Cloudflare Access. Anyone who gets through Access without being an active
+Add people at **Admin → Agents**. They sign in with your identity provider,
+so they need an account there too. Anyone who signs in without being an active
 agent is refused. Deactivating an agent keeps their name on past tickets.
 
 ### Keyboard shortcuts
@@ -109,7 +109,8 @@ than a lost ticket.
 - A Google Cloud project (Gmail API, Pub/Sub)
 - A Neon Postgres database
 - Vercel for hosting, cron and attachment storage (Blob)
-- Cloudflare Access in front of the app, for sign-in
+- An OpenID Connect identity provider for sign-in (Google, Microsoft Entra ID,
+  Okta, Auth0, Keycloak or your own)
 
 You need a Google Workspace domain with a Google Group for requesters to write
 to, and one mailbox in that domain that receives the group's mail. Every
@@ -164,7 +165,7 @@ Fill in the Google and Gmail values above, plus at minimum:
 
 - `DATABASE_URL`: a Neon **pooled** connection string (host contains `-pooler`)
 - `TOKEN_ENC_KEY` and `CRON_SECRET`: generate them with the commands in `.env.example`
-- `DEV_BYPASS_EMAIL`: your address; stands in for Cloudflare Access locally
+- `DEV_BYPASS_EMAIL`: your address; stands in for sign-in locally
 - `SEED_ADMIN_EMAIL`: same address, for the seed script
 
 ```bash
@@ -195,13 +196,9 @@ Then visit `/admin/gmail` and press **Connect Gmail**, signed in as
    are baked in at build time, so redeploy after changing them.
 2. Set `APP_URL` to the production URL, and keep `GMAIL_PUSH_AUDIENCE`
    identical to the push subscription's audience.
-3. Add the domain, then create the Cloudflare Access application:
-   - Allow policy listing agent emails, Google or one-time PIN
-   - **Bypass** policies for `/api/gmail/push`, `/api/cron/*` and `/csat/*`.
-     Access would otherwise block Google's push requests, which carry no Access
-     cookie, and requesters answering the survey
-   - Copy the team domain into `CF_ACCESS_TEAM_DOMAIN` and the Application
-     Audience tag into `CF_ACCESS_AUD`
+3. Register the app with your identity provider, with the redirect URI
+   `https://<your domain>/api/auth/callback`, and set `OIDC_ISSUER`,
+   `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` and `SESSION_SECRET`.
 4. `vercel-build` runs `db:migrate` before `next build`, so schema changes ship
    with the deploy.
 
@@ -271,8 +268,6 @@ Two more scheduled jobs:
   zone. Replies to the digest are ignored by ingest. Admins can send
   themselves a preview from `/admin/reports`.
 
-The cron routes need a Cloudflare Access Bypass policy for `/api/cron/*`.
-
 When a watch renewal, catch-up sync or digest fails, the app sends an alert to
 `SLACK_WEBHOOK_URL` and/or `ALERT_EMAIL_TO` if either is set. Otherwise the
 failure only shows up in the server log.
@@ -284,9 +279,13 @@ failure only shows up in the server log.
   `src/components/message-body.tsx`.
 - **Refresh tokens are encrypted at rest** with AES-256-GCM under
   `TOKEN_ENC_KEY` (`src/lib/crypto.ts`), not stored in plaintext.
-- **Two independent gates.** Cloudflare Access decides who reaches the app;
+- **Two independent gates.** Your identity provider decides who can sign in;
   the `agents` table decides who the app will act for. Deactivating an agent
-  here does not remove them from Access, so update both.
+  takes effect on their next request.
+- **Sign-in** uses the authorization code flow with PKCE, a nonce and a
+  one-time state, and verifies the ID token against the provider's published
+  keys. The app then keeps its own signed, HTTP-only session cookie for 12
+  hours.
 - **One mailbox.** Only `GMAIL_MAILBOX` can be connected, and only that agent
   (as an admin) can manage the connection.
 
@@ -317,9 +316,10 @@ are generated from it with `pnpm db:generate`.
 
 ```
 src/
-  proxy.ts                  Access JWT gate (Next 16's middleware convention)
+  proxy.ts                  sign-in gate (Next 16's middleware convention)
   app/
     (portal)/               tickets list, ticket page, admin pages
+    api/auth/*              OIDC sign-in, callback and sign-out
     api/gmail/push          Pub/Sub push handler
     api/cron/*              watch renewal, reconcile, auto-solve, digest
     api/admin/gmail/*       OAuth connect and callback
@@ -329,7 +329,7 @@ src/
   lib/
     gmail/{client,sync,ingest,send,backfill}.ts
     actions/{tickets,admin,templates,views}.ts
-    auth.ts access-jwt.ts crypto.ts queries.ts alerts.ts env.ts
+    auth.ts session.ts oidc.ts crypto.ts queries.ts alerts.ts env.ts
   components/               ui/, thread, composer, sidebar, admin forms
 scripts/                    migrate, seed, gmail:watch, gmail:sync, test:ingest
 ```
@@ -364,10 +364,10 @@ replies go out from.
   reconnect.
 - **Replies come from the mailbox, not the group.** `GROUP_EMAIL` isn't a
   verified "Send mail as" alias in that mailbox yet. `/admin/gmail` says which.
-- **"Not authorized" after signing in.** The person passed Cloudflare Access
-  but isn't an active agent. Add them at Admin → Agents.
-- **Pushes, crons or survey links are blocked.** They need the Cloudflare
-  Access Bypass policies for `/api/gmail/push`, `/api/cron/*` and `/csat/*`.
+- **"Not an agent here" after signing in.** The person has an account with
+  your identity provider but isn't an active agent. Add them at Admin → Agents.
+- **The identity provider rejects the redirect.** The redirect URI registered
+  there must be exactly `$APP_URL/api/auth/callback`.
 - **A changed `NEXT_PUBLIC_*` value doesn't show up.** These are baked in at
   build time, so redeploy.
 - **Missed mail.** `pnpm gmail:sync` (or "Sync now" on `/admin/gmail`) runs the

@@ -8,7 +8,7 @@ import { Sidebar } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { photosFor } from "@/lib/people";
 import { UserMenu } from "@/components/user-menu";
-import { env } from "@/lib/env";
+import { signInConfigured } from "@/lib/session";
 import { APP_NAME } from "@/lib/utils";
 import { GlobalShortcuts } from "@/components/shortcuts";
 
@@ -52,7 +52,7 @@ export default async function PortalLayout({
             name={agent.name}
             email={agent.email}
             photo={photos[agent.email.toLowerCase()] ?? null}
-            logoutUrl={env.cfTeamDomain && env.cfAud ? "/cdn-cgi/access/logout" : null}
+            logoutUrl={signInConfigured() ? "/api/auth/logout" : null}
             notifyEmail={agent.notifyEmail}
           />
         </div>

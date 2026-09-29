@@ -19,7 +19,7 @@ async function main() {
   const db = drizzle(pool, { casing: "snake_case" });
 
   // Teams and tags are safe to seed unconditionally; the admin needs a real
-  // address, because it has to match what Cloudflare Access hands over.
+  // address, because it has to match what the identity provider hands over.
   if (ADMIN_EMAIL) {
     await db
       .insert(agents)

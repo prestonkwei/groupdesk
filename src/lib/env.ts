@@ -90,12 +90,25 @@ export const env = {
     return req("CRON_SECRET");
   },
 
-  // Cloudflare Access
-  get cfTeamDomain() {
-    return opt("CF_ACCESS_TEAM_DOMAIN");
+  // Sign-in: any OpenID Connect provider
+  get oidcIssuer() {
+    return opt("OIDC_ISSUER");
   },
-  get cfAud() {
-    return opt("CF_ACCESS_AUD");
+  get oidcClientId() {
+    return opt("OIDC_CLIENT_ID");
+  },
+  /** Empty for a public client (PKCE only). */
+  get oidcClientSecret() {
+    return opt("OIDC_CLIENT_SECRET");
+  },
+  get oidcScopes() {
+    return opt("OIDC_SCOPES", "openid email profile");
+  },
+  /** Signs the session cookie. */
+  get sessionSecret() {
+    const v = req("SESSION_SECRET");
+    if (v.length < 32) throw new Error("SESSION_SECRET must be at least 32 characters");
+    return v;
   },
 
   // Alerts
@@ -106,7 +119,7 @@ export const env = {
     return opt("SLACK_WEBHOOK_URL");
   },
 
-  /** Local-dev escape hatch: acts as the signed-in agent when Access is absent. */
+  /** Local-dev escape hatch: acts as the signed-in agent when no one is signed in. */
   get devBypassEmail() {
     return process.env.NODE_ENV === "production"
       ? ""
