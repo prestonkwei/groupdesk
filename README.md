@@ -4,6 +4,8 @@ A shared inbox for mail sent to a Google Group. Gmail pushes changes to
 Pub/Sub, this app turns them into tickets, and agents reply from the portal
 with threading that lands correctly in the requester's inbox.
 
+![The ticket list](docs/screenshots/tickets.png)
+
 It was built for a school's tech team, so a few defaults lean that way (reply
 targets count school hours; an optional directory integration tags faculty as
 VIP), but nothing depends on it being a school.
@@ -29,6 +31,8 @@ VIP), but nothing depends on it being a school.
 | Mail | `@googleapis/gmail`, `postal-mime` to parse, `mimetext` to compose |
 
 ## Using it
+
+![A ticket: the email thread with an internal note and activity, and the side panel with status, assignees and the requester's other tickets](docs/screenshots/ticket.png)
 
 ### Ticket statuses
 
@@ -236,6 +240,10 @@ Then visit `/admin/gmail` and press **Connect Gmail**, signed in as
   current one in your sidebar.
 - **Search** is fuzzy (`pg_trgm`, enabled by migration 0001): typo-tolerant on
   subject and requester, plus exact text in message bodies and `#1234`.
+
+![Reports: volume, response and resolve times, reply-target and satisfaction rates, by team](docs/screenshots/reports.png)
+
+![Templates: the shared library, with variables to insert](docs/screenshots/templates.png)
 
 ## Crons and catch-up
 
