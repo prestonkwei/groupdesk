@@ -70,15 +70,17 @@ Press `?` anywhere for the full list.
 
 ## How mail becomes a ticket
 
-```
-Gmail (label on group mail)
-  └─ users.watch ──► Pub/Sub topic
-                        └─ push (OIDC) ──► POST /api/gmail/push
-                                              ├─ verify the OIDC token
-                                              ├─ SELECT ... FOR UPDATE on gmail_sync
-                                              ├─ history.list from OUR stored cursor
-                                              ├─ messages.get(format: raw) → postal-mime
-                                              └─ ingest → tickets / messages / events
+```mermaid
+flowchart TD
+  gmail["Gmail<br/>(label on group mail)"] -->|users.watch| topic["Pub/Sub topic"]
+  topic -->|"push (OIDC)"| push
+  subgraph push["POST /api/gmail/push"]
+    direction TB
+    verify["Verify the OIDC token"] --> lock["SELECT … FOR UPDATE on gmail_sync"]
+    lock --> history["history.list from OUR stored cursor"]
+    history --> fetch["messages.get(format: raw) → postal-mime"]
+    fetch --> ingest["ingest → tickets / messages / events"]
+  end
 ```
 
 Two things make this safe to retry:
