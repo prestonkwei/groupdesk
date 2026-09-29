@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, Paperclip } from "lucide-react";
+import { ChevronDown, Lock, Paperclip } from "lucide-react";
 import type { ThreadEvent, ThreadMessage } from "@/lib/queries";
 import type { PhotoMap } from "@/lib/people";
 import { HtmlBody, TextBody, splitQuote } from "./message-body";
@@ -173,6 +173,54 @@ export function Thread({
   );
 }
 
+/** "to Jamie, cc helpdesk ▾" under an open email; expands to the full header. */
+function Recipients({ message: m }: { message: ThreadMessage }) {
+  const [open, setOpen] = useState(false);
+  const bcc = m.bccEmails ?? [];
+  const short = (e: string) => e.split("@")[0];
+  const summary = [
+    m.toEmails.length ? `to ${m.toEmails.map(short).join(", ")}` : "",
+    m.ccEmails.length ? `cc ${m.ccEmails.map(short).join(", ")}` : "",
+    bcc.length ? `bcc ${bcc.map(short).join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const rows: [string, string][] = [
+    ["From", m.fromName ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail],
+    ["To", m.toEmails.join(", ")],
+    ["Cc", m.ccEmails.join(", ")],
+    ["Bcc", bcc.join(", ")],
+    ["Date", dateTime(m.sentAt)],
+    ["Subject", m.subject ?? ""],
+  ];
+  return (
+    <div className="-mt-1 mb-3">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="inline-flex max-w-full items-center gap-1 rounded text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+        title={open ? "Hide details" : "Show who this was sent to"}
+      >
+        <span className="truncate">{summary || "no recipients recorded"}</span>
+        <ChevronDown className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")} />
+      </button>
+      {open && (
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-[var(--border)] bg-[var(--muted)]/40 px-3 py-2 text-xs">
+          {rows
+            .filter(([, v]) => v)
+            .map(([k, v]) => (
+              <div key={k} className="contents">
+                <dt className="text-right text-[var(--muted-foreground)]">{k}</dt>
+                <dd className="min-w-0 break-words">{v}</dd>
+              </div>
+            ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
 function MessageCard({
   message: m,
   photo,
@@ -243,6 +291,7 @@ function MessageCard({
 
       {open && (
         <div className="px-3 pb-4 sm:px-4 sm:pl-[60px]">
+          {!isNote && <Recipients message={m} />}
           {m.bodyHtml ? (
             <HtmlBody html={m.bodyHtml} />
           ) : (
