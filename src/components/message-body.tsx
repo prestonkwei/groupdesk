@@ -2,6 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useHoverPopover, type Anchor } from "./hover-popover";
+import type { DateContext } from "./date-chips";
+import { splitQuote } from "@/lib/message-text";
+
+// The date parser and popover are only fetched when a body actually has a
+// DateContext, i.e. when the date detector is on.
+const AnchoredDatePopover = dynamic(() => import("./date-chips").then((m) => m.AnchoredDatePopover), { ssr: false });
+const loadChips = () => import("./date-chips");
+type Chips = Awaited<ReturnType<typeof loadChips>>;
+
+/** The chips module, once loaded; stays null while `enabled` is false. */
+function useChips(enabled: boolean) {
+  const [chips, setChips] = useState<Chips | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    loadChips().then((m) => {
+      if (!cancelled) setChips(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+  return chips;
+}
 
 /**
  * Email HTML is untrusted, so it renders in a sandboxed iframe with scripts
@@ -9,11 +35,21 @@ import { MoreHorizontal } from "lucide-react";
  * nothing in the email can run, and it lets us measure the document so the
  * frame fits its content instead of scrolling inside a fixed box.
  */
-export function HtmlBody({ html }: { html: string }) {
+export function HtmlBody({ html, dates }: { html: string; dates?: DateContext }) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(80);
   const [hasQuote, setHasQuote] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
+  // Dates in the email get chips inside the frame; the popover renders out
+  // here, anchored to the chip's position (the frame never scrolls, so the
+  // chip's rect is its offset within the frame).
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
+  const hover = useHoverPopover();
+  const { enter, leave, pin } = hover;
+  // A primitive, so a refreshed (but equal) Date doesn't re-annotate the frame.
+  const sentTime = dates ? new Date(dates.sentAt).getTime() : NaN;
+  const sentAtKey = Number.isNaN(sentTime) ? undefined : new Date(sentTime).toISOString();
+  const chips = useChips(sentAtKey !== undefined);
 
   const doc = `<!doctype html><html><head><base target="_blank">
 <meta name="color-scheme" content="light">
@@ -33,6 +69,8 @@ export function HtmlBody({ html }: { html: string }) {
   body:not(.show-quote) blockquote[type="cite"],
   body:not(.show-quote) #appendonsend ~ *,
   body:not(.show-quote) .yahoo_quoted { display:none !important; }
+  .date-chip { border-bottom:1px dashed #2554a4; color:#2554a4; cursor:pointer; border-radius:2px; }
+  .date-chip:hover, .date-chip.open { background:#e8effa; }
 </style></head><body>${html}</body></html>`;
 
   const measure = useCallback(() => {
@@ -44,10 +82,24 @@ export function HtmlBody({ html }: { html: string }) {
     const iframe = ref.current;
     if (!iframe) return;
     let observer: ResizeObserver | undefined;
+    let unannotate: (() => void) | undefined;
 
     function onLoad() {
       const d = iframe!.contentDocument;
       if (!d?.body) return;
+      if (sentAtKey && chips) {
+        unannotate = chips.annotateDocument(d, sentAtKey, {
+          enter: (a) => {
+            setAnchor(a);
+            enter();
+          },
+          leave,
+          pin: (a) => {
+            setAnchor(a);
+            pin();
+          },
+        });
+      }
       setHasQuote(
         !!d.querySelector(".gmail_quote, .gmail_quote_container, blockquote[type='cite'], #appendonsend, .yahoo_quoted"),
       );
@@ -63,8 +115,15 @@ export function HtmlBody({ html }: { html: string }) {
     return () => {
       iframe.removeEventListener("load", onLoad);
       observer?.disconnect();
+      unannotate?.();
     };
-  }, [html, measure]);
+  }, [html, measure, sentAtKey, chips, enter, leave, pin]);
+
+  // Underline-highlight the chip whose popover is open.
+  useEffect(() => {
+    const d = ref.current?.contentDocument;
+    if (d?.body && chips) chips.markOpenChip(d, hover.open && anchor ? anchor.id : null);
+  }, [chips, hover.open, anchor]);
 
   useEffect(() => {
     const body = ref.current?.contentDocument?.body;
@@ -74,38 +133,31 @@ export function HtmlBody({ html }: { html: string }) {
 
   return (
     <div>
-      <iframe
-        ref={ref}
-        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-        srcDoc={doc}
-        title="Message body"
-        className="block w-full border-0"
-        style={{ height }}
-      />
+      <div className="relative">
+        <iframe
+          ref={ref}
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          srcDoc={doc}
+          title="Message body"
+          className="block w-full border-0"
+          style={{ height }}
+        />
+        {dates && chips && <AnchoredDatePopover anchor={anchor} context={dates} hover={hover} />}
+      </div>
       {hasQuote && <QuoteToggle open={showQuote} onClick={() => setShowQuote((s) => !s)} />}
     </div>
   );
 }
 
-/** Splits plain text at the first quoted-reply marker ("On … wrote:" or "> "). */
-export function splitQuote(text: string): [string, string | null] {
-  const lines = text.split(/\r?\n/);
-  const at = lines.findIndex(
-    (l, i) =>
-      /^On .{5,200}wrote:\s*$/.test(l.trim()) ||
-      /^-{2,}\s*Original Message\s*-{2,}$/i.test(l.trim()) ||
-      (l.startsWith(">") && lines.slice(i).every((x) => !x.trim() || x.startsWith(">"))),
-  );
-  if (at <= 0) return [text, null];
-  return [lines.slice(0, at).join("\n").trimEnd(), lines.slice(at).join("\n")];
-}
-
-export function TextBody({ text }: { text: string }) {
+export function TextBody({ text, dates }: { text: string; dates?: DateContext }) {
   const [main, quote] = splitQuote(text);
   const [showQuote, setShowQuote] = useState(false);
+  const chips = useChips(!!dates);
   return (
     <div className="text-[15px] leading-relaxed">
-      <div className="whitespace-pre-wrap break-words">{main}</div>
+      <div className="whitespace-pre-wrap break-words">
+        {dates && chips ? <chips.TextWithDates text={main} context={dates} /> : main}
+      </div>
       {quote && (
         <>
           <QuoteToggle open={showQuote} onClick={() => setShowQuote((s) => !s)} />

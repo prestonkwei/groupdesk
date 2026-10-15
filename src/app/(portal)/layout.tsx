@@ -10,7 +10,10 @@ import { photosFor } from "@/lib/people";
 import { UserMenu } from "@/components/user-menu";
 import { signInConfigured } from "@/lib/session";
 import { APP_NAME } from "@/lib/utils";
+import { CalendarNotice } from "@/components/calendar-notice";
 import { GlobalShortcuts } from "@/components/shortcuts";
+import { calendarConnection } from "@/lib/calendar";
+import { DATE_DETECTOR } from "@/lib/features";
 
 export default async function PortalLayout({
   children,
@@ -18,12 +21,13 @@ export default async function PortalLayout({
   children: React.ReactNode;
 }) {
   const { agent } = await requireAgent();
-  const [counts, teams, tags, photos, views] = await Promise.all([
+  const [counts, teams, tags, photos, views, calendar] = await Promise.all([
     viewCounts(agent),
     listTeams(),
     listTags(),
     photosFor([agent.email]),
     listSavedViews(agent.id),
+    DATE_DETECTOR ? calendarConnection(agent.id) : null,
   ]);
 
   const sidebar = {
@@ -32,6 +36,7 @@ export default async function PortalLayout({
     tags: tags.map((t) => ({ name: t.name, slug: t.slug, color: t.color })),
     isAdmin: agent.role === "admin",
     canManageGmail: canManageGmail(agent),
+    calendarConnected: !!calendar,
     savedViews: views,
   };
 
@@ -54,9 +59,16 @@ export default async function PortalLayout({
             photo={photos[agent.email.toLowerCase()] ?? null}
             logoutUrl={signInConfigured() ? "/api/auth/logout" : null}
             notifyEmail={agent.notifyEmail}
+            calendar={calendar ? { email: calendar.email, error: calendar.lastError } : null}
           />
         </div>
       </header>
+
+      {DATE_DETECTOR && (
+        <Suspense fallback={null}>
+          <CalendarNotice />
+        </Suspense>
+      )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ResizablePanel
