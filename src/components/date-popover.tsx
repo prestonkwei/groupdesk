@@ -55,11 +55,14 @@ export function DatePopoverContent({
   context,
   onEnter,
   onLeave,
+  onInteractOutside,
 }: {
   match: DateMatch;
   context: DateContext;
   onEnter: () => void;
   onLeave: () => void;
+  /** Forwarded to Radix; lets the owner exempt its own hit targets from dismissal. */
+  onInteractOutside?: React.ComponentProps<typeof Popover.Content>["onInteractOutside"];
 }) {
   const [title, setTitle] = useState(context.subject || "Event");
   // Which zone a bare time ("2pm") is read in. The school zone unless the
@@ -153,6 +156,7 @@ export function DatePopoverContent({
         collisionPadding={8}
         onMouseEnter={onEnter}
         onMouseLeave={onLeave}
+        onInteractOutside={onInteractOutside}
         onOpenAutoFocus={(e) => e.preventDefault()}
         className="z-50 max-h-[var(--radix-popover-content-available-height)] w-72 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-sm shadow-lg"
       >

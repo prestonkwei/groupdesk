@@ -1,15 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useHoverPopover, type Anchor } from "./hover-popover";
-import type { DateContext } from "./date-chips";
+import type { DateContext, IframeChip } from "./date-chips";
 import { splitQuote } from "@/lib/message-text";
 
 // The date parser and popover are only fetched when a body actually has a
 // DateContext, i.e. when the date detector is on.
 const AnchoredDatePopover = dynamic(() => import("./date-chips").then((m) => m.AnchoredDatePopover), { ssr: false });
+const IframeChipOverlays = dynamic(() => import("./date-chips").then((m) => m.IframeChipOverlays), { ssr: false });
 const loadChips = () => import("./date-chips");
 type Chips = Awaited<ReturnType<typeof loadChips>>;
 
@@ -46,6 +47,10 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const hover = useHoverPopover();
   const { enter, leave, pin } = hover;
+  // Dates found in the frame; their hit targets are overlays in this document.
+  const [iframeChips, setIframeChips] = useState<IframeChip[]>([]);
+  // Bumped whenever the frame re-flows, so the overlays re-measure.
+  const [layout, setLayout] = useState(0);
   // A primitive, so a refreshed (but equal) Date doesn't re-annotate the frame.
   const sentTime = dates ? new Date(dates.sentAt).getTime() : NaN;
   const sentAtKey = Number.isNaN(sentTime) ? undefined : new Date(sentTime).toISOString();
@@ -70,12 +75,13 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
   body:not(.show-quote) #appendonsend ~ *,
   body:not(.show-quote) .yahoo_quoted { display:none !important; }
   .date-chip { border-bottom:1px dashed #2554a4; color:#2554a4; cursor:pointer; border-radius:2px; }
-  .date-chip:hover, .date-chip.open { background:#e8effa; }
+  .date-chip.open { background:#e8effa; }
 </style></head><body>${html}</body></html>`;
 
   const measure = useCallback(() => {
     const body = ref.current?.contentDocument?.body;
     if (body) setHeight(Math.ceil(body.scrollHeight) + 2);
+    setLayout((n) => n + 1);
   }, []);
 
   useEffect(() => {
@@ -88,17 +94,9 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
       const d = iframe!.contentDocument;
       if (!d?.body) return;
       if (sentAtKey && chips) {
-        unannotate = chips.annotateDocument(d, sentAtKey, {
-          enter: (a) => {
-            setAnchor(a);
-            enter();
-          },
-          leave,
-          pin: (a) => {
-            setAnchor(a);
-            pin();
-          },
-        });
+        const annotated = chips.annotateDocument(d, sentAtKey);
+        unannotate = annotated.cleanup;
+        setIframeChips(annotated.chips);
       }
       setHasQuote(
         !!d.querySelector(".gmail_quote, .gmail_quote_container, blockquote[type='cite'], #appendonsend, .yahoo_quoted"),
@@ -116,8 +114,30 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
       iframe.removeEventListener("load", onLoad);
       observer?.disconnect();
       unannotate?.();
+      setIframeChips([]);
     };
-  }, [html, measure, sentAtKey, chips, enter, leave, pin]);
+  }, [html, measure, sentAtKey, chips]);
+
+  // A narrower window re-wraps the email's lines, moving the chips.
+  useEffect(() => {
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [measure]);
+
+  const overlayHandlers = useMemo(
+    () => ({
+      enter: (a: Anchor) => {
+        setAnchor(a);
+        enter();
+      },
+      leave,
+      pin: (a: Anchor) => {
+        setAnchor(a);
+        pin();
+      },
+    }),
+    [enter, leave, pin],
+  );
 
   // Underline-highlight the chip whose popover is open.
   useEffect(() => {
@@ -142,6 +162,9 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
           className="block w-full border-0"
           style={{ height }}
         />
+        {dates && chips && iframeChips.length > 0 && (
+          <IframeChipOverlays chips={iframeChips} layout={`${layout}:${height}`} handlers={overlayHandlers} />
+        )}
         {dates && chips && <AnchoredDatePopover anchor={anchor} context={dates} hover={hover} />}
       </div>
       {hasQuote && <QuoteToggle open={showQuote} onClick={() => setShowQuote((s) => !s)} />}

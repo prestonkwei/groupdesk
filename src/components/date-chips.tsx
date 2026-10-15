@@ -98,6 +98,11 @@ export function AnchoredDatePopover({
         context={context}
         onEnter={hover.enter}
         onLeave={hover.leave}
+        // A click on an overlay is how a hovered popover gets pinned; Radix
+        // must not read it as a click outside and dismiss first.
+        onInteractOutside={(e) => {
+          if ((e.target as Element | null)?.closest?.("[data-date-overlay]")) e.preventDefault();
+        }}
       />
     </Popover.Root>
   );
@@ -130,6 +135,79 @@ export function markOpenChip(doc: Document, id: string | null) {
   doc.querySelectorAll<HTMLElement>(".date-chip").forEach((el) => el.classList.toggle("open", el.dataset.chip === id));
 }
 
+/** A date found in the iframe: its spans carry the underline, the overlays (below) the hit area. */
+export type IframeChip = { id: string; match: DateMatch; spans: HTMLElement[] };
+
+type Rect = { left: number; top: number; width: number; height: number };
+
+/** One rectangle per rendered line of the chip, relative to the frame's viewport. */
+function chipRects(chip: IframeChip): Rect[] {
+  return chip.spans.flatMap((span) =>
+    [...span.getClientRects()].map((r) => ({ left: r.left, top: r.top, width: r.width, height: r.height })),
+  );
+}
+
+function union(rects: Rect[]): Rect {
+  const left = Math.min(...rects.map((r) => r.left));
+  const top = Math.min(...rects.map((r) => r.top));
+  const right = Math.max(...rects.map((r) => r.left + r.width));
+  const bottom = Math.max(...rects.map((r) => r.top + r.height));
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+/**
+ * Transparent hit targets in the main document, laid over each chip in the
+ * sandboxed frame. The frame has no allow-scripts, and WebKit refuses to run
+ * event listeners on nodes inside such a frame (Chrome runs them), so hover
+ * and click must happen out here. The frame never scrolls, so a span's
+ * client rect is its offset within the frame, and the wrapper is positioned.
+ * `layout` is any value that changes when the frame re-flows, to re-measure.
+ */
+export function IframeChipOverlays({
+  chips,
+  layout,
+  handlers,
+}: {
+  chips: IframeChip[];
+  layout: unknown;
+  handlers: { enter: (a: Anchor) => void; leave: () => void; pin: (a: Anchor) => void };
+}) {
+  // Rects are read at render time; `layout` in the deps is what triggers it.
+  const targets = useMemo(
+    () =>
+      chips.flatMap((chip) => {
+        const rects = chipRects(chip);
+        if (!rects.length) return [];
+        const anchor = (): Anchor => ({ id: chip.id, match: chip.match, rect: union(chipRects(chip)) });
+        return rects.map((rect, i) => ({ key: `${chip.id}-${i}`, rect, anchor, title: describeMatch(chip.match) }));
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chips, layout],
+  );
+  return (
+    <>
+      {targets.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          tabIndex={-1}
+          data-date-overlay=""
+          aria-label={t.title}
+          title={t.title}
+          onMouseEnter={() => handlers.enter(t.anchor())}
+          onMouseLeave={handlers.leave}
+          onClick={(e) => {
+            e.preventDefault();
+            handlers.pin(t.anchor());
+          }}
+          className="absolute cursor-pointer rounded-sm bg-transparent hover:bg-[#2554a4]/10"
+          style={{ left: t.rect.left, top: t.rect.top, width: t.rect.width, height: t.rect.height }}
+        />
+      ))}
+    </>
+  );
+}
+
 /** Elements whose text reads as one run: a date is looked for within, never across, them. */
 const BLOCK = "p, div, li, td, th, blockquote, pre, h1, h2, h3, h4, h5, h6, body";
 const QUOTE_LEAD = /^On .{5,200}wrote:/;
@@ -137,17 +215,13 @@ const QUOTE_LEAD = /^On .{5,200}wrote:/;
 type Block = { el: Element; nodes: Text[]; starts: number[]; text: string; at: number };
 
 /**
- * Wraps dates found in the iframe document in .date-chip spans and wires
- * their hover/click back to the parent. Detection runs on each block
- * element's whole text, so "Friday <b>Oct 23</b> at 2pm" is one date; a date
- * that spans several text nodes gets one span per node, all sharing the chip.
- * Returns a cleanup.
+ * Wraps dates found in the iframe document in .date-chip spans (underline
+ * only; interaction is the overlays' job, see IframeChipOverlays). Detection
+ * runs on each block element's whole text, so "Friday <b>Oct 23</b> at 2pm"
+ * is one date; a date that spans several text nodes gets one span per node,
+ * all sharing the chip. Returns the chips and a cleanup that unwraps them.
  */
-export function annotateDocument(
-  doc: Document,
-  sentAt: Date | string,
-  handlers: { enter: (a: Anchor) => void; leave: () => void; pin: (a: Anchor) => void },
-): () => void {
+export function annotateDocument(doc: Document, sentAt: Date | string): { chips: IframeChip[]; cleanup: () => void } {
   // The "On <date> <person> wrote:" line that heads quoted replies isn't a
   // date to book. Mail clients split it over several nodes, so look at the
   // whole line (the parent element's text), once per parent.
@@ -202,7 +276,7 @@ export function annotateDocument(
   const zones = detectZones(joined);
 
   const cleanups: (() => void)[] = [];
-  let chips = 0;
+  const chips: IframeChip[] = [];
   for (const b of blocks.values()) {
     const matches = detectDates(b.text, sentAt, { whole: joined, zones, baseIndex: b.at }).filter(
       (m, k, all) => k === 0 || m.index >= all[k - 1].index + all[k - 1].text.length,
@@ -219,49 +293,32 @@ export function annotateDocument(
       });
       if (!segments.length) continue;
 
-      const id = `c${chips++}`;
+      const id = `c${chips.length}`;
       const spans: HTMLElement[] = [];
-      const anchor = (): Anchor => {
-        const rects = spans.map((s) => s.getBoundingClientRect());
-        const left = Math.min(...rects.map((r) => r.left));
-        const top = Math.min(...rects.map((r) => r.top));
-        const right = Math.max(...rects.map((r) => r.right));
-        const bottom = Math.max(...rects.map((r) => r.bottom));
-        return { id, match: m, rect: { left, top, width: right - left, height: bottom - top } };
-      };
-      const onEnter = () => handlers.enter(anchor());
-      const onLeave = () => handlers.leave();
-      const onClick = (e: Event) => {
-        e.preventDefault();
-        handlers.pin(anchor());
-      };
       for (const seg of segments.reverse()) {
         const mid = seg.node.splitText(seg.from);
         mid.splitText(seg.to - seg.from);
         const span = doc.createElement("span");
         span.className = "date-chip";
         span.dataset.chip = id;
-        span.title = describeMatch(m);
         mid.parentNode!.insertBefore(span, mid);
         span.appendChild(mid);
-        span.addEventListener("mouseenter", onEnter);
-        span.addEventListener("mouseleave", onLeave);
-        span.addEventListener("click", onClick);
         spans.push(span);
       }
+      chips.push({ id, match: m, spans });
       cleanups.push(() => {
-        for (const span of spans) {
-          span.removeEventListener("mouseenter", onEnter);
-          span.removeEventListener("mouseleave", onLeave);
-          span.removeEventListener("click", onClick);
-          // Put the text back as it was, so a re-run (same document) starts clean.
-          span.replaceWith(...span.childNodes);
-        }
+        // Put the text back as it was, so a re-run (same document) starts clean.
+        for (const span of spans) span.replaceWith(...span.childNodes);
       });
     }
   }
-  return () => {
-    cleanups.forEach((fn) => fn());
-    doc.body.normalize();
+  // Document order, so overlay keys are stable across re-measures.
+  chips.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  return {
+    chips,
+    cleanup: () => {
+      cleanups.forEach((fn) => fn());
+      doc.body.normalize();
+    },
   };
 }
