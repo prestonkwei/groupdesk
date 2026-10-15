@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { gmailSync } from "@/db/schema";
 import { env } from "@/lib/env";
-import { gmailFor, recordError, resolveLabelId, type GmailClient } from "./client";
+import { gmailFor, recordError, type GmailClient } from "./client";
 import { httpStatus, ingestGmailMessage } from "./ingest";
 
 export type SyncSummary = {
@@ -16,6 +16,14 @@ export type SyncSummary = {
   fullResync: boolean;
   newHistoryId: string | null;
 };
+
+/**
+ * Everything that arrives in the mailbox becomes a ticket, except mail the
+ * mailbox sent itself (portal replies are already recorded), unsent drafts,
+ * spam and trash.
+ */
+const IGNORED_LABELS = new Set(["SENT", "DRAFT", "SPAM", "TRASH"]);
+const INCOMING_QUERY = "-in:sent -in:drafts";
 
 function isNotFound(err: unknown): boolean {
   const e = err as {
@@ -45,11 +53,8 @@ export async function syncFromHistory(options?: {
     const summary = await db.transaction(async (tx) => {
       await tx.execute(sql`set local lock_timeout = '25s'`);
 
-      const locked = await tx.execute<{
-        last_history_id: string | null;
-        label_id: string | null;
-      }>(
-        sql`select last_history_id, label_id
+      const locked = await tx.execute<{ last_history_id: string | null }>(
+        sql`select last_history_id
               from gmail_sync
              where email = ${email}
                for update`,
@@ -58,18 +63,16 @@ export async function syncFromHistory(options?: {
       const row = (locked.rows ?? [])[0];
       if (!row) throw new Error(`gmail_sync row for ${email} disappeared`);
 
-      const labelId = await resolveLabelId(client, row.label_id);
       const startHistoryId = row.last_history_id;
 
       const result = startHistoryId
-        ? await walkHistory(client, labelId, startHistoryId)
-        : await fullResync(client, labelId);
+        ? await walkHistory(client, startHistoryId)
+        : await fullResync(client);
 
       const now = new Date();
       await tx
         .update(gmailSync)
         .set({
-          labelId,
           lastHistoryId: result.newHistoryId ?? startHistoryId,
           lastSyncAt: now,
           ...(options?.markPush ? { lastPushAt: now } : {}),
@@ -92,7 +95,6 @@ export async function syncFromHistory(options?: {
 
 async function walkHistory(
   client: GmailClient,
-  labelId: string,
   startHistoryId: string,
 ): Promise<Omit<SyncSummary, "email">> {
   const ids = new Set<string>();
@@ -105,14 +107,16 @@ async function walkHistory(
         userId: "me",
         startHistoryId,
         historyTypes: ["messageAdded"],
-        labelId,
         maxResults: 500,
         pageToken,
       });
 
       for (const h of data.history ?? []) {
         for (const added of h.messagesAdded ?? []) {
-          if (added.message?.id) ids.add(added.message.id);
+          const m = added.message;
+          if (!m?.id) continue;
+          if (m.labelIds?.some((l) => IGNORED_LABELS.has(l))) continue;
+          ids.add(m.id);
         }
       }
 
@@ -123,7 +127,7 @@ async function walkHistory(
     if (!isNotFound(err)) throw err;
     // Stored historyId aged out (Gmail keeps roughly a week). Start over from
     // a message listing; the gmail_message_id unique constraint dedupes.
-    return fullResync(client, labelId);
+    return fullResync(client);
   }
 
   const counts = await ingestAll(client, [...ids]);
@@ -132,7 +136,6 @@ async function walkHistory(
 
 async function fullResync(
   client: GmailClient,
-  labelId: string,
 ): Promise<Omit<SyncSummary, "email">> {
   const ids: string[] = [];
   let pageToken: string | undefined;
@@ -140,8 +143,7 @@ async function fullResync(
   do {
     const { data } = await client.users.messages.list({
       userId: "me",
-      labelIds: [labelId],
-      q: "newer_than:7d",
+      q: `newer_than:7d ${INCOMING_QUERY}`,
       maxResults: 100,
       pageToken,
     });
@@ -209,15 +211,13 @@ export async function startWatch(email?: string): Promise<WatchResult> {
     .where(eq(gmailSync.email, mailbox))
     .limit(1);
 
-  const labelId = await resolveLabelId(client, row?.labelId);
-
   const watch = () =>
     client.users.watch({
       userId: "me",
       requestBody: {
+        // No label filter: every change in the mailbox triggers a push, and
+        // the history walk picks out the newly arrived mail.
         topicName: env.pubsubTopic,
-        labelIds: [labelId],
-        labelFilterBehavior: "include",
       },
     });
 
@@ -239,7 +239,6 @@ export async function startWatch(email?: string): Promise<WatchResult> {
   await db
     .update(gmailSync)
     .set({
-      labelId,
       watchExpiration: expiration,
       // Only seed lastHistoryId the first time; otherwise we'd skip the window
       // between the last sync and this renewal.

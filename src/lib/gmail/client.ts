@@ -76,28 +76,6 @@ export async function gmailFor(email?: string): Promise<{
   return { client: gmail({ version: "v1", auth: client }), email: mailbox };
 }
 
-/**
- * Resolve the id of the label we watch. Callers persist it with their own
- * gmail_sync update: writing it here, on a separate connection, deadlocked
- * syncFromHistory, which already holds that row FOR UPDATE.
- */
-export async function resolveLabelId(
-  client: GmailClient,
-  cached?: string | null,
-): Promise<string> {
-  if (cached) return cached;
-  const { data } = await client.users.labels.list({ userId: "me" });
-  const label = (data.labels ?? []).find(
-    (l) => l.name?.toLowerCase() === env.labelName.toLowerCase(),
-  );
-  if (!label?.id) {
-    throw new Error(
-      `Gmail label "${env.labelName}" not found. Create the filter/label in Gmail first.`,
-    );
-  }
-  return label.id;
-}
-
 export async function recordError(email: string, message: string | null) {
   await db
     .update(gmailSync)

@@ -10,7 +10,6 @@
  * Safe to re-run: messages already ingested are skipped.
  */
 import "./load-env";
-import { env } from "../src/lib/env";
 import { backfillBatch, backfillQuery } from "../src/lib/gmail/backfill";
 
 function arg(name: string): string | undefined {
@@ -21,7 +20,7 @@ function arg(name: string): string | undefined {
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const query = backfillQuery(
-    arg("query") ?? `label:"${env.labelName}"`,
+    arg("query") ?? "-in:sent -in:drafts",
     arg("after"),
     arg("before"),
   );

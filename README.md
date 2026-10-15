@@ -71,7 +71,7 @@ Press `?` anywhere for the full list.
 
 ```mermaid
 flowchart TD
-  gmail["Gmail<br/>(label on group mail)"] -->|users.watch| topic["Pub/Sub topic"]
+  gmail["Gmail<br/>(connected mailbox)"] -->|users.watch| topic["Pub/Sub topic"]
   topic -->|"push (OIDC)"| push
   subgraph push["POST /api/gmail/push"]
     direction TB
@@ -140,15 +140,10 @@ variable mentioned below is described in `.env.example`.
 
 ### 2. Gmail
 
-In the mailbox you'll connect (`GMAIL_MAILBOX`), create a filter:
-
-- Matches: `list:<group>.<domain>` (e.g. `list:help.example.org`)
-- Apply label: the value of `GMAIL_LABEL_NAME`
-- Optionally skip the inbox, so a personal inbox stays clean
-
-The watch is scoped to this label (`labelFilterBehavior: 'include'`), so nothing
-else in the mailbox produces a push. The app resolves the label name to an id
-and caches it on `gmail_sync`.
+Every email that arrives in the mailbox you'll connect (`GMAIL_MAILBOX`)
+becomes a ticket, wherever Gmail files it. Mail the mailbox sends itself,
+drafts, spam and trash are left out. The watch covers the whole mailbox, so
+use a mailbox dedicated to the help desk rather than someone's personal one.
 
 To send replies as the group, add `GROUP_EMAIL` as a verified alias in that
 mailbox: Gmail Settings → Accounts → "Send mail as". `/admin/gmail` shows
@@ -353,9 +348,8 @@ Start at `/admin/gmail`. It shows whether the mailbox is connected, when the
 watch expires, the last push and sync, the last error, and which address
 replies go out from.
 
-- **No new tickets.** Check that the Gmail filter actually applies the label
-  (the name must match `GMAIL_LABEL_NAME` exactly), that the watch hasn't
-  expired, and that "Last push received" moves when mail arrives. If it
+- **No new tickets.** Check that the watch hasn't expired, and that "Last
+  push received" moves when mail arrives. If it
   doesn't and the Pub/Sub subscription shows deliveries failing with 401,
   the subscription's audience doesn't match `GMAIL_PUSH_AUDIENCE`, or its
   service account isn't `GMAIL_PUSH_SA_EMAIL`.

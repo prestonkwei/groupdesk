@@ -71,9 +71,6 @@ export const env = {
   },
 
   // Gmail
-  get labelName() {
-    return req("GMAIL_LABEL_NAME");
-  },
   /** The one mailbox the app ingests from; only this person may manage it. */
   get gmailMailbox() {
     return req("GMAIL_MAILBOX").toLowerCase();

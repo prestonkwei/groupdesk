@@ -73,9 +73,8 @@ export default async function GmailAdminPage({
     <div className="max-w-2xl p-6">
       <h1 className="mb-1 text-base font-semibold">Gmail connection</h1>
       <p className="mb-5 text-xs text-[var(--muted-foreground)]">
-        Mail reaches this portal through a Gmail watch on the{" "}
-        <code className="rounded bg-[var(--muted)] px-1">{env.labelName}</code> label,
-        pushed to Pub/Sub. Reconnecting here is a one-click fix — no redeploy.
+        Every email that arrives in this mailbox reaches the portal through a
+        Gmail watch pushed to Pub/Sub. Reconnecting here is a one-click fix — no redeploy.
       </p>
 
       {sp.ok && (
@@ -111,7 +110,6 @@ export default async function GmailAdminPage({
             <Row label="Last push received" value={fmt(row?.lastPushAt)} />
             <Row label="Last successful sync" value={fmt(row?.lastSyncAt)} />
             <Row label="History cursor" value={row?.lastHistoryId ?? "—"} />
-            <Row label="Label id" value={row?.labelId ?? "not resolved yet"} />
             <Row label="Pub/Sub topic" value={process.env.GMAIL_PUBSUB_TOPIC ?? "—"} />
             <Row label="Push endpoint" value={`${env.appUrl}/api/gmail/push`} />
             {sendAs && (
@@ -165,7 +163,7 @@ export default async function GmailAdminPage({
           <CardContent>
             <BackfillForm
               action={runBackfillBatch}
-              defaultQuery={`list:${env.groupEmail.replace("@", ".")}`}
+              defaultQuery="-in:sent -in:drafts"
             />
           </CardContent>
         </Card>
