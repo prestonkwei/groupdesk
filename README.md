@@ -67,6 +67,54 @@ Press `?` anywhere for the full list.
 | Ticket list | `j` / `k` move · `Enter` open · `s` star · `i` assign to me · `x` select (`⇧X` range), then `a` `p` `c` `t` `m` to assign, prioritise, change status, tag or move team |
 | Ticket | `r` reply · `n` note · `⌘Enter` send · `e` solve · `a` `p` `c` `t` `m` as above · `j` / `k` next and previous ticket · `u` or `Esc` back |
 
+### Dates in emails (optional)
+
+Off by default. Enable the **Google Calendar API** in the same Google Cloud
+project as the Gmail API, set `NEXT_PUBLIC_DATE_DETECTOR=1` (or true/on/yes)
+and redeploy to turn it on; nothing below appears otherwise, the date code isn't
+sent to the browser, and the calendar actions and routes refuse.
+The two migrations it adds (`agent_calendars`, `messages.sent_offset_min`)
+are harmless when the feature is off. The date logic lives in `src/lib/time`
+(no app imports; `pnpm test:dates` checks it offline), the UI in
+`src/components/date-chips.tsx`, `date-popover.tsx` and `calendar-peek.tsx`,
+and the server side in `src/lib/calendar.ts` and `src/lib/actions/calendar.ts`.
+
+Dates and times mentioned in an email ("Friday October 23rd at 2pm", "next
+Tuesday morning") are underlined in the thread. Hover or click one for a
+popover that shows the parsed date, whether you're free then, and buttons to
+add it to your calendar. Parsing runs in the browser with
+[chrono-node](https://github.com/wanasit/chrono), relative to when the email
+was sent and in `NEXT_PUBLIC_TIME_ZONE` (and again on the server when an
+event description digests follow-up messages).
+
+"Open in Google Calendar" always works: it's a prefilled new-event link.
+Availability, one-click "Add to my calendar" and "Suggest a time" (the next
+free slots of the same length, on weekdays within `NEXT_PUBLIC_SCHOOL_HOURS`,
+from `freebusy.query`) need your own Google Calendar connected from the
+account menu (top right). That uses the same Google OAuth client and redirect
+URI as the Gmail connection, with the `calendar.events` and `calendar.freebusy`
+scopes; each agent's refresh token is stored encrypted in `agent_calendars`.
+
+Times are read in `NEXT_PUBLIC_TIME_ZONE` unless the email names a zone
+("2pm EST"). Each inbound message also records the sender's UTC offset from
+its `Date` header; when that disagrees with the school zone and the text
+didn't say, the popover flags the time as ambiguous and offers both readings.
+Either way you can reply to the requester from the popover: a confirmation
+with an `invite.ics` attached (organizer: the group address), or a question
+asking them to confirm the time and zone. Both are ordinary ticket replies.
+The invite is checked with ical.js (a strict RFC 5545 parser) before it is
+sent, and again in `pnpm test:dates`.
+
+The event's description links back to the ticket, quotes the sentence the
+date came from, and digests every message that arrived after it, flagging any
+that mention other dates or read like a reschedule ("postpone", "instead",
+"can't make"…). It's a snapshot taken when you book.
+
+**Calendar** in the sidebar opens a day-at-a-glance dropdown of your free and
+busy stretches of school hours (weekends show as such), with arrows to move
+between days. Connecting a calendar reports its result in a banner under the
+header; disconnecting also revokes the token at Google.
+
 ## How mail becomes a ticket
 
 ```mermaid
@@ -119,7 +167,8 @@ variable mentioned below is described in `.env.example`.
 ### 1. Google Cloud
 
 1. Create a project and enable the **Gmail API**, **Cloud Pub/Sub API** and
-   **People API** (the last one is for directory profile photos).
+   **People API** (the last one is for directory profile photos). If you turn
+   on the optional date detector, also enable the **Google Calendar API**.
 2. OAuth consent screen: **Internal**. An External app left in Testing has its
    refresh tokens expire after 7 days. The app asks for `gmail.readonly`,
    `gmail.send` and `directory.readonly`.
