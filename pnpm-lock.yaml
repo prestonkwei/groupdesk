@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@googleapis/calendar':
+        specifier: 20.1.0
+        version: 20.1.0(supports-color@7.2.0)
       '@googleapis/gmail':
         specifier: ^22.0.0
         version: 22.0.0(supports-color@7.2.0)
@@ -35,6 +38,9 @@ importers:
       '@vercel/blob':
         specifier: ^2.8.0
         version: 2.8.0
+      chrono-node:
+        specifier: 2.10.3
+        version: 2.10.3
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -50,6 +56,9 @@ importers:
       google-auth-library:
         specifier: ^11.1.0
         version: 11.1.0(supports-color@7.2.0)
+      ical.js:
+        specifier: 2.2.1
+        version: 2.2.1
       jose:
         specifier: ^6.2.12
         version: 6.2.12
@@ -730,6 +739,10 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
+
+  '@googleapis/calendar@20.1.0':
+    resolution: {integrity: sha512-bPO9wts48OAEhJn5UfgPC4FuyW/D6ufUzdXx0JHfeJIqg+O5bHvX/TenaAdbJuGhluhn5FLlyl6HzuhE4rFJqw==}
+    engines: {node: '>=22.0.0'}
 
   '@googleapis/gmail@22.0.0':
     resolution: {integrity: sha512-rLPm6IHRLnhtJgrrZBf/4vOs3A+pI1FJRKALEKgX0dAiUYrir9Bu0RdNQbt7TGOCUoqm635uJeKOeYAZP6xO8A==}
@@ -1865,6 +1878,10 @@ packages:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
     engines: {node: '>=10'}
 
+  chrono-node@2.10.3:
+    resolution: {integrity: sha512-MOfrzXgSMZTH4SZ5gyRKQCVwiCrCKY+uYkSJiWoRLXS88DA6WGJm8UjgS+VVEuUQeew/UUXaxrO+SeDn/WCisg==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
+
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
@@ -2467,6 +2484,9 @@ packages:
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
     engines: {node: '>=10.17.0'}
+
+  ical.js@2.2.1:
+    resolution: {integrity: sha512-yK/UlPbEs316igb/tjRgbFA8ZV75rCsBJp/hWOatpyaPNlgw0dGDmU+FoicOcwX4xXkeXOkYiOmCqNPFpNPkQg==}
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -3895,6 +3915,12 @@ snapshots:
 
   '@floating-ui/utils@0.2.12': {}
 
+  '@googleapis/calendar@20.1.0(supports-color@7.2.0)':
+    dependencies:
+      googleapis-common: 9.1.0(supports-color@7.2.0)
+    transitivePeerDependencies:
+      - supports-color
+
   '@googleapis/gmail@22.0.0(supports-color@7.2.0)':
     dependencies:
       googleapis-common: 9.1.0(supports-color@7.2.0)
@@ -4939,6 +4965,8 @@ snapshots:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
 
+  chrono-node@2.10.3: {}
+
   class-variance-authority@0.7.1:
     dependencies:
       clsx: 2.1.1
@@ -5695,6 +5723,8 @@ snapshots:
       - supports-color
 
   human-signals@2.1.0: {}
+
+  ical.js@2.2.1: {}
 
   ignore@5.3.2: {}
 
