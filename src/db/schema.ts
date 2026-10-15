@@ -219,6 +219,11 @@ export const messages = pgTable(
       onDelete: "set null",
     }),
     sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * UTC offset in minutes from the email's Date header: the sender's clock,
+     * a hint for which zone a time written in the body is in. Null when unknown.
+     */
+    sentOffsetMin: integer("sent_offset_min"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -376,6 +381,26 @@ export const blockedSenders = pgTable("blocked_senders", {
   email: text("email").primaryKey(),
   blockedBy: uuid("blocked_by").references(() => agents.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/* --------------------------------------------------------------- calendar */
+
+/**
+ * An agent's own Google Calendar, connected from the account menu so dates
+ * spotted in emails can show their availability. One per agent; the refresh
+ * token is encrypted like the mailbox token in gmail_sync.
+ */
+export const agentCalendars = pgTable("agent_calendars", {
+  agentId: uuid("agent_id")
+    .primaryKey()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  /** The Google account that granted access; may differ from the agent's sign-in email. */
+  email: text("email").notNull(),
+  refreshTokenEnc: text("refresh_token_enc").notNull(),
+  lastError: text("last_error"),
+  connectedAt: timestamp("connected_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 /* -------------------------------------------------------------- gmail sync */

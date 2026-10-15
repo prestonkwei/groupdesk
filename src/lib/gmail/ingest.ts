@@ -31,6 +31,16 @@ export function httpStatus(err: unknown): number | undefined {
 
 /* -------------------------------------------------------------- header help */
 
+/** "+0100" / "-0700" at the end of a Date header as minutes east of UTC; null if absent. */
+export function headerOffsetMinutes(dateHeader: string | undefined): number | null {
+  const m = dateHeader?.match(/([+-])(\d{2})(\d{2})\s*(?:\([^)]*\))?\s*$/);
+  if (!m) return null;
+  // "-0000" means the sender's zone is unknown (RFC 5322); "+0000" is taken as UTC.
+  if (m[1] === "-" && m[2] === "00" && m[3] === "00") return null;
+  const sign = m[1] === "-" ? -1 : 1;
+  return sign * (Number(m[2]) * 60 + Number(m[3]));
+}
+
 function headerValue(email: Email, name: string): string | undefined {
   const target = name.toLowerCase();
   for (const h of email.headers ?? []) {
@@ -320,6 +330,7 @@ export async function ingestParsedEmail(input: {
         bodyHtml: parsed.html ?? null,
         authorAgentId: agent?.id ?? null,
         sentAt,
+        sentOffsetMin: headerOffsetMinutes(headerValue(parsed, "date")),
       })
       .onConflictDoNothing()
       .returning({ id: messages.id });

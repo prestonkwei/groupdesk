@@ -12,6 +12,8 @@ const [openMin, closeMin] = (process.env.NEXT_PUBLIC_SCHOOL_HOURS || "08:00-16:0
     return h * 60 + (m || 0);
   });
 const WORKDAY = closeMin - openMin;
+/** School hours as minutes after local midnight, e.g. 480–960 for 08:00–16:00. */
+export const SCHOOL_HOURS = { openMin, closeMin };
 
 /** Target time to reply, in school hours, by priority. "none" = 1 school day. */
 export const SLA_TARGET_HOURS: Record<string, number> = {
