@@ -29,6 +29,8 @@ export async function sendReply(args: {
   bodyText: string;
   /** Rich-text body from the composer; plain text is always sent alongside. */
   bodyHtml: string | null;
+  /** Files to attach, e.g. a calendar invite. `data` is base64. */
+  attachments?: { filename: string; contentType: string; data: string }[];
 }): Promise<SentReply> {
   if (!args.to.length) throw new Error("Add at least one recipient");
 
@@ -81,6 +83,9 @@ export async function sendReply(args: {
     `<p style="margin-top:16px;color:#6b7280">--<br>${escapeHtml(args.agent.name)}<br>${TEAM_NAME}<br>Ticket #${ticket.number}</p></div>` +
     (quote?.html ?? "");
   msg.addMessage({ contentType: "text/html", encoding: "base64", data: base64Lines(html) });
+  for (const a of args.attachments ?? []) {
+    msg.addAttachment({ filename: a.filename, contentType: a.contentType, encoding: "base64", data: a.data });
+  }
 
   const raw = Buffer.from(msg.asRaw()).toString("base64url");
 

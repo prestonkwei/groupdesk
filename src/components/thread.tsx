@@ -4,9 +4,11 @@ import { useState } from "react";
 import { ChevronDown, Lock, Paperclip } from "lucide-react";
 import type { ThreadEvent, ThreadMessage } from "@/lib/queries";
 import type { PhotoMap } from "@/lib/people";
-import { HtmlBody, TextBody, splitQuote } from "./message-body";
+import { HtmlBody, TextBody } from "./message-body";
+import { htmlToText, splitQuote, stripReplyPrefix } from "@/lib/message-text";
 import { Avatar } from "@/components/ui/avatar";
 import { cn, dateTime, relativeTime } from "@/lib/utils";
+import { DATE_DETECTOR } from "@/lib/features";
 
 type Item =
   | { kind: "message"; at: Date; message: ThreadMessage }
@@ -62,16 +64,7 @@ function describe(e: ThreadEvent, names: Map<string, string>): string {
 
 /** One-line preview of a collapsed message, without the quoted history. */
 function snippet(m: ThreadMessage) {
-  const text = m.bodyHtml
-    ? m.bodyHtml
-        .split(/<(?:div|blockquote)[^>]*class="[^"]*gmail_quote|<blockquote[^>]*type="cite"/i)[0]
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&#39;|&apos;/g, "'")
-        .replace(/&quot;/g, '"')
-    : splitQuote(m.bodyText ?? "")[0];
+  const text = m.bodyHtml ? htmlToText(m.bodyHtml) : splitQuote(m.bodyText ?? "")[0];
   return text.replace(/\s+/g, " ").trim().slice(0, 160);
 }
 
@@ -264,6 +257,15 @@ function MessageCard({
   const isNote = m.direction === "note";
   const isOutbound = m.direction === "outbound";
   const name = m.fromName || m.fromEmail;
+  // Dates mentioned in the email resolve relative to when it was sent.
+  const dates = !DATE_DETECTOR ? undefined : {
+    subject: stripReplyPrefix(m.subject ?? ""),
+    sentAt: m.sentAt,
+    ticketId: m.ticketId,
+    messageId: m.id,
+    sentOffsetMin: m.sentOffsetMin ?? null,
+    fromName: m.fromName,
+  };
 
   const nameRow = (
     <>
@@ -344,9 +346,9 @@ function MessageCard({
       {open && (
         <div className="px-3 pt-3 pb-4 sm:px-4 sm:pl-[60px]">
           {m.bodyHtml ? (
-            <HtmlBody html={isNote ? highlightMentions(m.bodyHtml, mentions) : m.bodyHtml} />
+            <HtmlBody html={isNote ? highlightMentions(m.bodyHtml, mentions) : m.bodyHtml} dates={dates} />
           ) : (
-            <TextBody text={m.bodyText ?? "(empty message)"} />
+            <TextBody text={m.bodyText ?? "(empty message)"} dates={dates} />
           )}
 
           {m.attachments.length > 0 && (

@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { encryptSecret } from "@/lib/crypto";
 import { oauthClient } from "@/lib/gmail/client";
 import { gmail } from "@googleapis/gmail";
+import { CALENDAR_STATE_COOKIE, CALENDAR_STATE_PREFIX, handleCalendarCallback } from "@/lib/calendar-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,17 @@ function back(message: string, ok = false) {
 }
 
 export async function GET(req: Request) {
+  // One registered redirect URI serves both consents; an agent connecting
+  // their own calendar arrives here too (see lib/calendar-oauth.ts). Dispatch
+  // on `state`, not on a leftover cookie, so an abandoned calendar connect
+  // can't capture the Gmail owner's callback.
+  if (new URL(req.url).searchParams.get("state")?.startsWith(CALENDAR_STATE_PREFIX)) {
+    const jar = await cookies();
+    const calendarCookie = jar.get(CALENDAR_STATE_COOKIE)?.value;
+    jar.delete(CALENDAR_STATE_COOKIE);
+    return handleCalendarCallback(req, calendarCookie);
+  }
+
   await requireGmailOwner();
 
   const url = new URL(req.url);

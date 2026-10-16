@@ -57,6 +57,20 @@
       "when": 1790605976537,
       "tag": "0007_csat",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792098952219,
+      "tag": "0008_agent_calendars",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792101646332,
+      "tag": "0009_sent_offset",
+      "breakpoints": true
     }
   ]
 }

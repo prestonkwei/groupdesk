@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "sent_offset_min" integer;

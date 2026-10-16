@@ -1,10 +1,13 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useOptimistic, useTransition } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Bell, LogOut } from "lucide-react";
+import { Bell, CalendarDays, LogOut } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { setNotifyEmail } from "@/lib/actions/views";
+import { disconnectCalendar } from "@/lib/actions/calendar";
+import { DATE_DETECTOR } from "@/lib/features";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,8 +20,11 @@ export function UserMenu({
   photo,
   logoutUrl,
   notifyEmail,
+  calendar,
 }: {
   notifyEmail: boolean;
+  /** The Google account whose calendar is connected, if any. */
+  calendar: { email: string; error: string | null } | null;
   name: string;
   email: string;
   photo: string | null;
@@ -27,6 +33,8 @@ export function UserMenu({
 }) {
   const [notify, setNotify] = useOptimistic(notifyEmail);
   const [, start] = useTransition();
+  // Come back to the page the agent was on after connecting.
+  const connectHref = `/api/calendar/connect?next=${encodeURIComponent(usePathname())}`;
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -86,6 +94,50 @@ export function UserMenu({
               />
             </span>
           </button>
+          {DATE_DETECTOR && (
+            <>
+              <div className="my-1 h-px bg-[var(--border)]" />
+              <div className="flex items-start gap-2 px-2 py-1.5">
+                <CalendarDays className="mt-0.5 size-4 shrink-0 text-[var(--muted-foreground)]" />
+                <div className="min-w-0 flex-1">
+                  <p>Google Calendar</p>
+                  {calendar ? (
+                    <>
+                      <p className="truncate text-[11px] text-[var(--muted-foreground)]" title={calendar.email}>
+                        {calendar.email}
+                      </p>
+                      {calendar.error && (
+                        <p className="text-[11px] text-[var(--destructive)]">Last lookup failed; reconnect.</p>
+                      )}
+                      <div className="mt-1 flex gap-2 text-[11px]">
+                        <a href={connectHref} className="text-[var(--primary)] hover:underline">
+                          Reconnect
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            start(async () => {
+                              await disconnectCalendar();
+                            })
+                          }
+                          className="text-[var(--muted-foreground)] hover:underline"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-[var(--muted-foreground)]">
+                      <a href={connectHref} className="text-[var(--primary)] hover:underline">
+                        Connect
+                      </a>{" "}
+                      to see your availability on dates in emails.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
           <div className="my-1 h-px bg-[var(--border)]" />
           {logoutUrl ? (
             // A full page load, not a client navigation: it may leave for the provider.

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -23,6 +24,13 @@ import {
 import { deleteView } from "@/lib/actions/views";
 import { cn } from "@/lib/utils";
 import { TagDot } from "@/components/ui/badge";
+import { DATE_DETECTOR } from "@/lib/features";
+
+// Only fetched when the date detector is on.
+const CalendarPeek = dynamic(() => import("@/components/calendar-peek").then((m) => m.CalendarPeek), {
+  ssr: false,
+  loading: () => <div className="h-8" aria-hidden />,
+});
 
 type Counts = {
   all: number;
@@ -56,10 +64,13 @@ export function Sidebar({
   tags,
   isAdmin,
   canManageGmail,
+  calendarConnected = false,
   className,
   savedViews = [],
 }: {
   counts: Counts;
+  /** The agent has connected their Google Calendar (account menu). */
+  calendarConnected?: boolean;
   teams: { name: string; slug: string }[];
   tags: { name: string; slug: string; color: string }[];
   isAdmin: boolean;
@@ -124,6 +135,11 @@ export function Sidebar({
         <FileText className="size-4 text-[var(--muted-foreground)]" />
         Templates
       </Link>
+      {DATE_DETECTOR && (
+        <div className="-mt-5">
+          <CalendarPeek connected={calendarConnected} />
+        </div>
+      )}
 
       {savedViews.length > 0 && (
         <div className="flex flex-col gap-0.5">
