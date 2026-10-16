@@ -5,7 +5,7 @@
  * get into a plain-text body (React) and into the sandboxed HTML iframe
  * (DOM annotation), and the hover/click behaviour that opens the popover.
  */
-import { useMemo, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { describeMatch, detectDates, detectZones, type DateMatch } from "@/lib/dates";
 import { cn } from "@/lib/utils";
@@ -65,18 +65,36 @@ export function DateChip({ match, context, children }: { match: DateMatch; conte
 
 /**
  * Popover for a chip that lives inside the email iframe: anchored to a box
- * placed over the chip's position, since the real element is in another document.
+ * placed over the hovered line of the chip, since the real element is in
+ * another document. The box is re-measured whenever `layout` changes, so it
+ * follows the chip when the frame re-flows. `overlayId` names the HtmlBody
+ * whose overlays a click may land on without counting as outside.
  */
 export function AnchoredDatePopover({
   anchor,
+  chips,
+  layout,
+  overlayId,
   context,
   hover,
 }: {
   anchor: Anchor | null;
+  chips: IframeChip[];
+  layout: unknown;
+  overlayId: string;
   context: DateContext;
   hover: ReturnType<typeof useHoverPopover>;
 }) {
-  if (!anchor) return null;
+  const [rect, setRect] = useState<Rect | null>(null);
+  useLayoutEffect(() => {
+    const chip = anchor && chips.find((c) => c.id === anchor.id);
+    const rects = chip ? chipRects(chip) : [];
+    // The hovered line, else the whole chip, else its first rect.
+    // Reading the frame's layout is the external sync this effect exists for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setRect(anchor && rects.length ? (rects[anchor.line] ?? union(rects) ?? rects[0]) : null);
+  }, [anchor, chips, layout]);
+  if (!anchor || !rect) return null;
   return (
     <Popover.Root open={hover.open} onOpenChange={(o) => (o ? hover.pin() : hover.close())}>
       <Popover.Anchor asChild>
@@ -84,10 +102,10 @@ export function AnchoredDatePopover({
           aria-hidden
           style={{
             position: "absolute",
-            left: anchor.rect.left,
-            top: anchor.rect.top,
-            width: anchor.rect.width,
-            height: anchor.rect.height,
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
             pointerEvents: "none",
           }}
         />
@@ -98,16 +116,17 @@ export function AnchoredDatePopover({
         context={context}
         onEnter={hover.enter}
         onLeave={hover.leave}
-        // A click on an overlay is how a hovered popover gets pinned; Radix
-        // must not read it as a click outside and dismiss first.
+        // A click on this body's overlay is how a hovered popover gets pinned;
+        // Radix must not read it as a click outside and dismiss first. Another
+        // body's overlays are outside, and do dismiss.
         onInteractOutside={(e) => {
-          if ((e.target as Element | null)?.closest?.("[data-date-overlay]")) e.preventDefault();
+          const overlay = (e.target as Element | null)?.closest?.("[data-date-overlay]");
+          if (overlay?.getAttribute("data-date-overlay") === overlayId) e.preventDefault();
         }}
       />
     </Popover.Root>
   );
 }
-
 
 /** Plain text with its dates wrapped in chips. */
 export function TextWithDates({ text, context }: { text: string; context: DateContext }) {
@@ -162,28 +181,36 @@ function union(rects: Rect[]): Rect {
  * and click must happen out here. The frame never scrolls, so a span's
  * client rect is its offset within the frame, and the wrapper is positioned.
  * `layout` is any value that changes when the frame re-flows, to re-measure.
+ * `overlayId` is stamped on every overlay so a popover can tell its own
+ * body's overlays from another's.
  */
 export function IframeChipOverlays({
   chips,
   layout,
+  overlayId,
   handlers,
 }: {
   chips: IframeChip[];
   layout: unknown;
+  overlayId: string;
   handlers: { enter: (a: Anchor) => void; leave: () => void; pin: (a: Anchor) => void };
 }) {
-  // Rects are read at render time; `layout` in the deps is what triggers it.
-  const targets = useMemo(
-    () =>
-      chips.flatMap((chip) => {
-        const rects = chipRects(chip);
-        if (!rects.length) return [];
-        const anchor = (): Anchor => ({ id: chip.id, match: chip.match, rect: union(chipRects(chip)) });
-        return rects.map((rect, i) => ({ key: `${chip.id}-${i}`, rect, anchor, title: describeMatch(chip.match) }));
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [chips, layout],
-  );
+  const [targets, setTargets] = useState<{ key: string; anchor: Anchor; rect: Rect; label: string }[]>([]);
+  // Rects live in the frame's layout, so they are read after render, and again when it re-flows.
+  useLayoutEffect(() => {
+    // Measuring the frame's DOM is the external sync this effect exists for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTargets(
+      chips.flatMap((chip) =>
+        chipRects(chip).map((rect, line) => ({
+          key: `${chip.id}-${line}`,
+          anchor: { id: chip.id, match: chip.match, line },
+          rect,
+          label: describeMatch(chip.match),
+        })),
+      ),
+    );
+  }, [chips, layout]);
   return (
     <>
       {targets.map((t) => (
@@ -191,14 +218,13 @@ export function IframeChipOverlays({
           key={t.key}
           type="button"
           tabIndex={-1}
-          data-date-overlay=""
-          aria-label={t.title}
-          title={t.title}
-          onMouseEnter={() => handlers.enter(t.anchor())}
+          data-date-overlay={overlayId}
+          aria-label={t.label}
+          onMouseEnter={() => handlers.enter(t.anchor)}
           onMouseLeave={handlers.leave}
           onClick={(e) => {
             e.preventDefault();
-            handlers.pin(t.anchor());
+            handlers.pin(t.anchor);
           }}
           className="absolute cursor-pointer rounded-sm bg-transparent hover:bg-[#2554a4]/10"
           style={{ left: t.rect.left, top: t.rect.top, width: t.rect.width, height: t.rect.height }}

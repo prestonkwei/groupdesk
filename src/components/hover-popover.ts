@@ -12,20 +12,28 @@ export type Anchor = {
   /** Unique per chip in the document; keys the popover so state never carries between chips. */
   id: string;
   match: DateMatch;
-  rect: { left: number; top: number; width: number; height: number };
+  /** Index of the chip's client rect (one per rendered line) that was hovered or clicked. */
+  line: number;
 };
 
 /**
  * Hover opens after a beat; leaving both chip and popover closes it; a click
  * pins it. The returned callbacks keep one identity for the life of the
- * component, so listeners attached once (inside an iframe) never go stale.
+ * component, so handlers memoised on them (the overlay handlers in HtmlBody)
+ * don't change on every render. `pinnedRef` lets those handlers read the
+ * pin state without depending on it.
  */
 export function useHoverPopover() {
   const [open, setOpen] = useState(false);
   const [pinned, setPinnedState] = useState(false);
   const pinnedRef = useRef(false);
+  const openRef = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const setOpenNow = useCallback((v: boolean) => {
+    openRef.current = v;
+    setOpen(v);
+  }, []);
   const setPinned = useCallback((v: boolean) => {
     pinnedRef.current = v;
     setPinnedState(v);
@@ -36,23 +44,29 @@ export function useHoverPopover() {
   }, []);
   const enter = useCallback(() => {
     clear();
-    timer.current = setTimeout(() => setOpen(true), 200);
-  }, [clear]);
+    timer.current = setTimeout(() => setOpenNow(true), 200);
+  }, [clear, setOpenNow]);
   const leave = useCallback(() => {
     clear();
     if (pinnedRef.current) return;
-    timer.current = setTimeout(() => setOpen(false), 250);
-  }, [clear]);
+    timer.current = setTimeout(() => setOpenNow(false), 250);
+  }, [clear, setOpenNow]);
   const pin = useCallback(() => {
     clear();
     setPinned(true);
-    setOpen(true);
-  }, [clear, setPinned]);
+    setOpenNow(true);
+  }, [clear, setPinned, setOpenNow]);
   const close = useCallback(() => {
     clear();
     setPinned(false);
-    setOpen(false);
-  }, [clear, setPinned]);
+    setOpenNow(false);
+  }, [clear, setPinned, setOpenNow]);
+  /** Closes an open, unpinned popover (the anchor moved or vanished); a pending hover-open is left alone. */
+  const dismiss = useCallback(() => {
+    if (pinnedRef.current || !openRef.current) return;
+    clear();
+    setOpenNow(false);
+  }, [clear, setOpenNow]);
   useEffect(() => clear, [clear]);
-  return { open, pinned, enter, leave, pin, close };
+  return { open, pinned, pinnedRef, enter, leave, pin, close, dismiss };
 }

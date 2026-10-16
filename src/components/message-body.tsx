@@ -1,16 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
-import dynamic from "next/dynamic";
 import { useHoverPopover, type Anchor } from "./hover-popover";
 import type { DateContext, IframeChip } from "./date-chips";
 import { splitQuote } from "@/lib/message-text";
 
 // The date parser and popover are only fetched when a body actually has a
 // DateContext, i.e. when the date detector is on.
-const AnchoredDatePopover = dynamic(() => import("./date-chips").then((m) => m.AnchoredDatePopover), { ssr: false });
-const IframeChipOverlays = dynamic(() => import("./date-chips").then((m) => m.IframeChipOverlays), { ssr: false });
 const loadChips = () => import("./date-chips");
 type Chips = Awaited<ReturnType<typeof loadChips>>;
 
@@ -42,11 +39,14 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
   const [hasQuote, setHasQuote] = useState(false);
   const [showQuote, setShowQuote] = useState(false);
   // Dates in the email get chips inside the frame; the popover renders out
-  // here, anchored to the chip's position (the frame never scrolls, so the
-  // chip's rect is its offset within the frame).
+  // here, anchored to the hovered line of the chip; the rect is derived from
+  // the chips at render time (the frame never scrolls, so a chip's rect is
+  // its offset within the frame).
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const hover = useHoverPopover();
-  const { enter, leave, pin } = hover;
+  const { enter, leave, pin, close, dismiss, pinnedRef } = hover;
+  // Tells this body's overlays from another body's when deciding what counts as an outside click.
+  const overlayId = useId();
   // Dates found in the frame; their hit targets are overlays in this document.
   const [iframeChips, setIframeChips] = useState<IframeChip[]>([]);
   // Bumped whenever the frame re-flows, so the overlays re-measure.
@@ -74,7 +74,7 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
   body:not(.show-quote) blockquote[type="cite"],
   body:not(.show-quote) #appendonsend ~ *,
   body:not(.show-quote) .yahoo_quoted { display:none !important; }
-  .date-chip { border-bottom:1px dashed #2554a4; color:#2554a4; cursor:pointer; border-radius:2px; }
+  .date-chip { border-bottom:1px dashed #2554a4; color:#2554a4; border-radius:2px; }
   .date-chip.open { background:#e8effa; }
 </style></head><body>${html}</body></html>`;
 
@@ -89,6 +89,7 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
     if (!iframe) return;
     let observer: ResizeObserver | undefined;
     let unannotate: (() => void) | undefined;
+    let cancelled = false;
 
     function onLoad() {
       const d = iframe!.contentDocument;
@@ -104,6 +105,10 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
       measure();
       observer = new ResizeObserver(measure);
       observer.observe(d.body);
+      // A web font arriving late re-flows the text.
+      d.fonts?.ready.then(() => {
+        if (!cancelled) measure();
+      });
       // Images load after the document; each one can change the height.
       d.querySelectorAll("img").forEach((img) => img.addEventListener("load", measure));
     }
@@ -111,6 +116,7 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
     iframe.addEventListener("load", onLoad);
     if (iframe.contentDocument?.readyState === "complete") onLoad();
     return () => {
+      cancelled = true;
       iframe.removeEventListener("load", onLoad);
       observer?.disconnect();
       unannotate?.();
@@ -127,6 +133,8 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
   const overlayHandlers = useMemo(
     () => ({
       enter: (a: Anchor) => {
+        // A pinned popover stays on its chip; only a click moves it.
+        if (pinnedRef.current) return;
         setAnchor(a);
         enter();
       },
@@ -136,8 +144,19 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
         pin();
       },
     }),
-    [enter, leave, pin],
+    [enter, leave, pin, pinnedRef],
   );
+
+  // The frame re-flowed, so the chip may have moved or re-wrapped and the
+  // mouse may no longer be over it (an overlay unmounting fires no mouseleave).
+  useEffect(() => {
+    dismiss();
+  }, [layout, dismiss]);
+
+  // The anchored chip is gone (new html, annotation re-run).
+  useEffect(() => {
+    if (anchor && !iframeChips.some((c) => c.id === anchor.id)) close();
+  }, [anchor, iframeChips, close]);
 
   // Underline-highlight the chip whose popover is open.
   useEffect(() => {
@@ -163,9 +182,23 @@ export function HtmlBody({ html, dates }: { html: string; dates?: DateContext })
           style={{ height }}
         />
         {dates && chips && iframeChips.length > 0 && (
-          <IframeChipOverlays chips={iframeChips} layout={`${layout}:${height}`} handlers={overlayHandlers} />
+          <chips.IframeChipOverlays
+            chips={iframeChips}
+            layout={layout}
+            overlayId={overlayId}
+            handlers={overlayHandlers}
+          />
         )}
-        {dates && chips && <AnchoredDatePopover anchor={anchor} context={dates} hover={hover} />}
+        {dates && chips && (
+          <chips.AnchoredDatePopover
+            anchor={anchor}
+            chips={iframeChips}
+            layout={layout}
+            overlayId={overlayId}
+            context={dates}
+            hover={hover}
+          />
+        )}
       </div>
       {hasQuote && <QuoteToggle open={showQuote} onClick={() => setShowQuote((s) => !s)} />}
     </div>
